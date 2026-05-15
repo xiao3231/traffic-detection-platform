@@ -1,0 +1,28 @@
+.page {
+  width: 136px;
+  height: 48px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  background: rgba(171, 8, 227, 1);
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.image {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  box-sizing: border-box;
+  margin-left: 10px;
+}
+.image1 {
+  width: 68px;
+  height: 24px;
+  box-sizing: border-box;
+}
+.image2 {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  box-sizing: border-box;
+}

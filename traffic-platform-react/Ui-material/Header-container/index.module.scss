@@ -1,0 +1,361 @@
+.page {
+  width: 1660px;
+  height: 84px;
+  box-sizing: border-box;
+  background: rgba(46, 46, 46, 1);
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+.wrap {
+  width: 1297px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  margin-right: 181px;
+}
+.container {
+  width: 1297px;
+  height: 57px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.content {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  margin-top: 8px;
+}
+.main {
+  width: 573.04px;
+  height: 40px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.image {
+  width: 60.36px;
+  height: 32.83px;
+  margin-top: 4.3px;
+}
+.image1 {
+  width: 1px;
+  height: 16px;
+  margin-top: 12px;
+  margin-left: 33.19px;
+}
+.section {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: flex-start;
+  margin-left: 31.5px;
+}
+.subSection {
+  width: 447px;
+  height: 40px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.block {
+  width: 73px;
+  height: 40px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.image2 {
+  width: 57px;
+  height: 20px;
+  box-sizing: border-box;
+}
+.block1 {
+  width: 59px;
+  height: 40px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.image3 {
+  width: 43px;
+  height: 20px;
+  box-sizing: border-box;
+}
+.block2 {
+  width: 106px;
+  height: 40px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.image4 {
+  width: 90px;
+  height: 20px;
+  box-sizing: border-box;
+}
+.block3 {
+  width: 114px;
+  height: 40px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.image5 {
+  width: 98px;
+  height: 20px;
+  box-sizing: border-box;
+}
+.block4 {
+  width: 79px;
+  height: 40px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 4px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.image6 {
+  width: 43px;
+  height: 20px;
+  box-sizing: border-box;
+  margin-left: 8px;
+}
+.image7 {
+  width: 20px;
+  height: 20px;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+.content1 {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  margin-left: 342px;
+}
+.main1 {
+  width: 381px;
+  height: 57px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: flex-start;
+}
+.section1 {
+  height: 56px;
+  border-radius: 16px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  padding-right: 12px;
+  padding-left: 12px;
+}
+.block5 {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  box-sizing: border-box;
+  position: relative;
+}
+.subBlock {
+  width: 17px;
+  border-color: rgba(149, 149, 149, 1);
+  border-style: solid;
+  border-width: 2px;
+  box-sizing: border-box;
+  min-height: 17px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+}
+.image8 {
+  width: 7.2px;
+  height: 7.2px;
+  position: absolute;
+  top: 14.8px;
+  left: 14.8px;
+}
+.section2 {
+  width: 71px;
+  height: 56px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 8px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.image9 {
+  width: 27px;
+  height: 24px;
+  box-sizing: border-box;
+  margin-left: 10px;
+}
+.image10 {
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+}
+.image11 {
+  width: 1px;
+  height: 16px;
+  margin-top: 20px;
+  margin-left: 7.5px;
+}
+.section3 {
+  height: 56px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: center;
+  align-items: center;
+  margin-left: 7.5px;
+}
+.subSection2 {
+  width: 85px;
+  height: 24px;
+  display: flex;
+  justify-content: flex-start;
+  align-items: center;
+}
+.block6 {
+  width: 24px;
+  height: 24px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.image12 {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  border-radius: 100px;
+  box-sizing: border-box;
+}
+.image13 {
+  width: 49px;
+  height: 20px;
+  box-sizing: border-box;
+  margin-left: 12px;
+}
+.image14 {
+  width: 1px;
+  height: 16px;
+  margin-top: 20px;
+  margin-left: 7.5px;
+}
+.section4 {
+  width: 48px;
+  height: 56px;
+  border-radius: 12px;
+  box-sizing: border-box;
+  margin-left: 7.5px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.subSection3 {
+  width: 24px;
+  height: 24px;
+  overflow: hidden;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.block7 {
+  width: 19.5px;
+  height: 19.5px;
+  border-color: rgba(255, 255, 255, 1);
+  border-style: solid;
+  border-width: 1.5px;
+  box-sizing: border-box;
+  position: relative;
+}
+.image15 {
+  width: 9px;
+  height: 19.5px;
+  position: absolute;
+  top: 0px;
+  left: 5.25px;
+}
+.image16 {
+  width: 18.48px;
+  height: 1.5px;
+  position: absolute;
+  top: 6px;
+  left: 0.51px;
+}
+.image17 {
+  width: 18.48px;
+  height: 1.5px;
+  position: absolute;
+  top: 12px;
+  left: 0.51px;
+}
+.section5 {
+  width: 57px;
+  height: 57px;
+  border-radius: 100px;
+  box-sizing: border-box;
+  margin-left: 8px;
+  position: relative;
+}
+.image18 {
+  width: 40px;
+  height: 40px;
+  position: absolute;
+  top: 8px;
+  left: 8px;
+}
+.image19 {
+  width: 52px;
+  height: 52px;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+}
+.image20 {
+  width: 28px;
+  height: 28px;
+  border-radius: 100px;
+  box-sizing: border-box;
+  background: rgba(171, 8, 227, 1);
+  position: absolute;
+  top: 29px;
+  left: 29px;
+}

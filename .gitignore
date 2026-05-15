@@ -1,0 +1,35 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+.Python
+
+# 环境与密钥（本地复制为 .env 使用，勿提交真实密钥）
+.env
+.env.*
+!.env.example
+
+# 机器学习产物与归档（体积大、可本地重训生成）
+*.pkl
+traffic_platform/train_test/model_archive/
+
+# 前端
+traffic-platform-react/node_modules/
+traffic-platform-react/dist/
+
+# 运行时上传目录
+traffic_platform/web_platform/upload/
+
+# IDE / 系统
+.idea/
+.DS_Store
+Thumbs.db
+
+# 日志与临时
+*.log
+*.tmp

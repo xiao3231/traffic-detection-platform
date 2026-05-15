@@ -1,0 +1,320 @@
+.adm-page {
+  min-height: 100vh;
+  background: var(--bg-dark);
+}
+
+.adm-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 28px 48px;
+}
+
+.adm-headline {
+  position: relative;
+  border-radius: 18px;
+  overflow: hidden;
+  margin-bottom: 22px;
+  border: 1px solid rgba(171, 8, 227, 0.28);
+  background: linear-gradient(135deg, rgba(26, 26, 26, 0.98) 0%, rgba(40, 18, 52, 0.95) 100%);
+}
+
+.adm-headline-bg {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 70% 80% at 80% 20%, rgba(171, 8, 227, 0.35), transparent 55%),
+    radial-gradient(ellipse 50% 60% at 10% 90%, rgba(199, 62, 245, 0.18), transparent 50%);
+  pointer-events: none;
+}
+
+.adm-headline-inner {
+  position: relative;
+  z-index: 1;
+  padding: 26px 28px 22px;
+}
+
+.adm-headline-inner h1 {
+  margin: 0 0 8px;
+  font-size: clamp(22px, 3vw, 28px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: #fff;
+}
+
+.adm-headline-inner p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: rgba(255, 255, 255, 0.62);
+  max-width: 560px;
+}
+
+.adm-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 45vh;
+}
+
+.adm-spin {
+  animation: adm-spin 0.85s linear infinite;
+}
+
+@keyframes adm-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 工具栏：搜索 */
+.adm-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.adm-search-wrap {
+  flex: 1;
+  min-width: 220px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(26, 26, 26, 0.9);
+}
+
+.adm-search-wrap img {
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+
+.adm-search-wrap input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 14px;
+  outline: none;
+  min-width: 0;
+}
+
+.adm-search-wrap input::placeholder {
+  color: var(--text-secondary);
+}
+
+.adm-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.adm-banner-err {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 59, 48, 0.1);
+  border: 1px solid rgba(255, 59, 48, 0.35);
+  color: #ff8a80;
+  font-size: 14px;
+  margin-bottom: 14px;
+}
+
+/* 用户卡片列表：参考 user-info 分层卡片 */
+.adm-user-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.adm-user-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 18px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(26, 26, 26, 0.92);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.adm-user-card:hover {
+  border-color: rgba(171, 8, 227, 0.35);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+}
+
+.adm-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.adm-user-main {
+  min-width: 0;
+}
+
+.adm-user-name {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 6px;
+  word-break: break-all;
+}
+
+.adm-user-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.adm-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  font-variant-numeric: tabular-nums;
+}
+
+.adm-pill.role-admin {
+  background: rgba(171, 8, 227, 0.2);
+  color: var(--primary-light);
+}
+
+.adm-pill.role-user {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-secondary);
+}
+
+.adm-pill.ok {
+  color: #5ee397;
+  background: rgba(52, 199, 89, 0.12);
+}
+
+.adm-pill.blocked {
+  color: #ff8a80;
+  background: rgba(255, 59, 48, 0.12);
+}
+
+.adm-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.adm-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: #252525;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.adm-btn:hover:not(:disabled) {
+  border-color: rgba(171, 8, 227, 0.45);
+  background: rgba(171, 8, 227, 0.12);
+}
+
+.adm-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.adm-btn.primary {
+  border-color: transparent;
+  background: linear-gradient(90deg, var(--primary), var(--primary-light));
+  color: #fff;
+}
+
+.adm-btn.danger {
+  border-color: rgba(255, 59, 48, 0.35);
+  color: #ff8a80;
+  background: rgba(255, 59, 48, 0.08);
+}
+
+.adm-btn.danger:hover:not(:disabled) {
+  background: rgba(255, 59, 48, 0.15);
+}
+
+/* 改密弹层 */
+.adm-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 20px;
+}
+
+.adm-modal {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 16px;
+  border: 1px solid rgba(171, 8, 227, 0.35);
+  background: #1a1a1a;
+  padding: 22px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.adm-modal h3 {
+  margin: 0 0 6px;
+  color: #fff;
+  font-size: 17px;
+}
+
+.adm-modal .sub {
+  margin: 0 0 16px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.adm-modal input {
+  width: 100%;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: #111;
+  color: #fff;
+  font-size: 14px;
+  margin-bottom: 16px;
+  box-sizing: border-box;
+}
+
+.adm-modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 720px) {
+  .adm-user-card {
+    grid-template-columns: 1fr;
+  }
+  .adm-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+}
