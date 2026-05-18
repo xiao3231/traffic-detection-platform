@@ -5,8 +5,7 @@ import Icon from '../components/Icon'
 import { apiUrl, readJsonResponse } from '../api'
 import './Home.css'
 
-/** 首页底部署名：改成你的名字或团队名即可 */
-const HOME_SIGNATURE = 'Neptune'
+const HOME_SIGNATURE = 'XM 1793143191@qq.com'
 
 const FEATURE_DETECTION = {
   to: '/detection',
@@ -14,6 +13,7 @@ const FEATURE_DETECTION = {
   title: '流量检测',
   desc: '上传 pcap，基于随机森林模型分析恶意倾向，查看协议分布与检测结论。',
   cta: '进入检测',
+  cardSize: 'side',
 }
 
 const FEATURE_HISTORY = {
@@ -22,14 +22,16 @@ const FEATURE_HISTORY = {
   title: '历史记录',
   desc: '按时间查看本人检测记录、图表统计与协议占比，便于对比与追溯。',
   cta: '查看历史',
+  cardSize: 'side',
 }
 
 const FEATURE_ANALYSIS = {
   to: '/analysis',
   icon: 'barChart',
   title: '抓包协议分析',
-  desc: '实时或离线抓包、会话标注、特征预览与模型重训、版本恢复（仅管理员）。',
+  desc: '实时或离线抓包、会话标注与特征预览；支持模型重训、指标对比与版本恢复，管理员工作台核心入口。',
   cta: '打开分析',
+  cardSize: 'hero',
 }
 
 const FEATURE_ADMIN_USERS = {
@@ -38,6 +40,7 @@ const FEATURE_ADMIN_USERS = {
   title: '用户管理',
   desc: '搜索用户、重置密码、查看检测提交与不重复 pcap 数量、封禁或解封账号。',
   cta: '用户管理',
+  cardSize: 'wide',
 }
 
 const FEATURE_PROFILE = {
@@ -46,25 +49,103 @@ const FEATURE_PROFILE = {
   title: '个人中心',
   desc: '账号与偏好入口，与顶栏头像一致，可在此扩展资料与设置。',
   cta: '个人中心',
+  cardSize: 'compact',
 }
 
 function homeFeatureCards(isAdmin) {
-  const list = [FEATURE_DETECTION, FEATURE_HISTORY]
   if (isAdmin) {
-    list.push(FEATURE_ANALYSIS, FEATURE_ADMIN_USERS)
+    return [
+      FEATURE_ANALYSIS,
+      FEATURE_HISTORY,
+      FEATURE_DETECTION,
+      FEATURE_ADMIN_USERS,
+      FEATURE_PROFILE,
+    ]
   }
-  list.push(FEATURE_PROFILE)
-  return list
+  return [
+    { ...FEATURE_DETECTION, cardSize: 'hero' },
+    FEATURE_HISTORY,
+    FEATURE_PROFILE,
+  ]
 }
 
-const MARQUEE_PROTOCOLS = [
-  { label: 'TCP', icon: 'tcp' },
-  { label: 'UDP', icon: 'udp' },
-  { label: 'HTTP', icon: 'http' },
-  { label: 'HTTPS', icon: 'https' },
-  { label: 'PCAP', icon: 'filePcap' },
-  { label: 'Scapy', icon: 'shield' },
+const HERO_ICON = 34
+const SIDE_ICON = 26
+const WIDE_ICON = 28
+const COMPACT_ICON = 24
+
+function cardIconSize(cardSize) {
+  if (cardSize === 'hero') return HERO_ICON
+  if (cardSize === 'wide') return WIDE_ICON
+  if (cardSize === 'compact') return COMPACT_ICON
+  return SIDE_ICON
+}
+
+function HomeFeatureBento({ isAdmin }) {
+  const cards = homeFeatureCards(isAdmin)
+  const bentoMod = cards.length === 5 ? 'home-cards--bento-5' : 'home-cards--bento-3'
+
+  return (
+    <div className={`home-cards ${bentoMod}`}>
+      {cards.map((f) => (
+        <Link
+          key={f.to}
+          to={f.to}
+          className={`home-card home-card--${f.cardSize}`}
+        >
+          <div className="home-card-icon">
+            <Icon name={f.icon} size={cardIconSize(f.cardSize)} />
+          </div>
+          <h2>{f.title}</h2>
+          <p>{f.desc}</p>
+          <span className="home-card-cta">
+            {f.cta}
+            <span aria-hidden="true">→</span>
+          </span>
+        </Link>
+      ))}
+    </div>
+  )
+}
+
+/** 首页技术条：与本平台训练 / 检测链路一致 */
+const MARQUEE_TECH_STACK = [
+  { label: 'Scapy', sub: 'pcap 解析与抓包', icon: 'scan' },
+  { label: '随机森林', sub: '主检测模型', icon: 'barChart' },
+  { label: 'scikit-learn', sub: '训练与基线对比', icon: 'chart' },
+  { label: '16 维流特征', sub: '行为 + 协议统计', icon: 'file' },
+  { label: 'joblib', sub: 'model.pkl 持久化', icon: 'folder' },
+  { label: 'Flask API', sub: '检测 / 重训接口', icon: 'settings' },
+  { label: 'MongoDB', sub: '检测与训练记录', icon: 'history' },
+  { label: 'F1 · 混淆矩阵', sub: '恶意类网安指标', icon: 'pieChart' },
+  { label: 'React + Vite', sub: '检测工作台前端', icon: 'home' },
+  { label: 'PCAP 流水线', sub: '上传 → 特征 → 判别', icon: 'filePcap' },
 ]
+
+function TechMarquee() {
+  const chip = (item, key) => (
+    <span key={key} className="home-chip">
+      <Icon name={item.icon} size={18} />
+      <span className="home-chip-text">
+        <span className="home-chip-label">{item.label}</span>
+        {item.sub ? <span className="home-chip-sub">{item.sub}</span> : null}
+      </span>
+    </span>
+  )
+
+  return (
+    <div className="home-marquee-wrap" aria-label="平台技术栈">
+      <div className="home-marquee-track">
+        <div className="home-marquee-group">
+          {MARQUEE_TECH_STACK.map((item) => chip(item, item.label))}
+        </div>
+        <div className="home-marquee-group" aria-hidden="true">
+          {MARQUEE_TECH_STACK.map((item) => chip(item, `dup-${item.label}`))}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 function formatClock(d) {
   const p = (n) => String(n).padStart(2, '0')
@@ -119,8 +200,6 @@ export default function Home() {
     }
   }, [])
 
-  const duplexMarquee = [...MARQUEE_PROTOCOLS, ...MARQUEE_PROTOCOLS]
-
   return (
     <div className="home-dashboard">
       <div className="home-bg" aria-hidden="true">
@@ -142,27 +221,18 @@ export default function Home() {
           </div>
           <h1>恶意流量检测工作台</h1>
           <p className="home-hero-sub">
-            基于 Scapy 与机器学习的一站式平台：检测、历史归档{role === 'admin' ? '、抓包与模型训练（管理员）' : ''}
+            你好！{role === 'admin' ? '管理员' : '用户'}！
+            <br />
+            基于 Scapy 与机器学习的一站式平台：检测、历史归档{role === 'admin' ? '、抓包与模型训练' : ''}
             。从下方卡片进入各模块。
           </p>
           <div className="home-live-row">
             <span>
               本地时间 <span className="mono">{clock}</span>
             </span>
-            <span className="sep">|</span>
-            <span>背景粒子与网格持续运动</span>
           </div>
 
-          <div className="home-marquee-wrap">
-            <div className="home-marquee">
-              {duplexMarquee.map((item, idx) => (
-                <span key={`${item.label}-${idx}`} className="home-chip">
-                  <Icon name={item.icon} size={18} />
-                  {item.label}
-                </span>
-              ))}
-            </div>
-          </div>
+          <TechMarquee />
         </section>
 
         {!loggedIn && (
@@ -175,21 +245,7 @@ export default function Home() {
           </div>
         )}
 
-        <div className="home-cards">
-          {homeFeatureCards(role === 'admin').map((f) => (
-            <Link key={f.to} to={f.to} className="home-card">
-              <div className="home-card-icon">
-                <Icon name={f.icon} size={28} />
-              </div>
-              <h2>{f.title}</h2>
-              <p>{f.desc}</p>
-              <span className="home-card-cta">
-                {f.cta}
-                <span aria-hidden="true">→</span>
-              </span>
-            </Link>
-          ))}
-        </div>
+        <HomeFeatureBento isAdmin={role === 'admin'} />
       </main>
 
       <footer className="home-footer">

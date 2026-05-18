@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Icon from '../components/Icon'
@@ -54,6 +54,9 @@ export default function ProtocolAnalysis() {
   const [restoreRunId, setRestoreRunId] = useState(null)
   const [includeLabeledInTrain, setIncludeLabeledInTrain] = useState(true)
   const [sniffError, setSniffError] = useState('')
+  const [featureSchema, setFeatureSchema] = useState(null)
+  const [lastTrainMetrics, setLastTrainMetrics] = useState(null)
+  const [expandedRunId, setExpandedRunId] = useState(null)
 
   const loadSessions = useCallback(async () => {
     const res = await fetch(apiUrl('/api/capture/sessions'), { credentials: 'include' })
@@ -65,6 +68,12 @@ export default function ProtocolAnalysis() {
     const res = await fetch(apiUrl('/api/train/runs'), { credentials: 'include' })
     const data = await readJsonResponse(res)
     if (res.ok) setModelRuns(data.items || [])
+  }, [])
+
+  const loadFeatureSchema = useCallback(async () => {
+    const res = await fetch(apiUrl('/api/train/feature-schema'), { credentials: 'include' })
+    const data = await readJsonResponse(res)
+    if (res.ok) setFeatureSchema(data)
   }, [])
 
   const refreshStatus = useCallback(async () => {
@@ -158,6 +167,7 @@ export default function ProtocolAnalysis() {
         const st = await refreshStatus()
         await loadSessions()
         await loadModelRuns()
+        await loadFeatureSchema()
         if (!cancelled && st?.running) {
           /* 轮询由 useEffect([running,paused]) 自动启动 */
         }
@@ -171,7 +181,7 @@ export default function ProtocolAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [navigate, refreshStatus, loadSessions, loadModelRuns])
+  }, [navigate, refreshStatus, loadSessions, loadModelRuns, loadFeatureSchema])
 
   const postAction = async (path, body) => {
     setBusy(true)
@@ -275,10 +285,14 @@ export default function ProtocolAnalysis() {
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || '训练失败')
       await loadModelRuns()
-      const tr = data.metrics?.train_score
-      const te = data.metrics?.test_score
+      if (data.metrics) setLastTrainMetrics(data.metrics)
+      const m = data.metrics || {}
       alert(
-        `训练完成\n训练集准确率: ${tr != null ? (tr * 100).toFixed(2) : '—'}%\n测试集准确率: ${te != null ? (te * 100).toFixed(2) : '—'}%\n合并正常 pcap: ${data.merged_good_pcaps} 个，恶意: ${data.merged_bad_pcaps} 个`
+        `训练完成（${m.feature_count ?? '—'} 维特征）\n` +
+          `测试准确率: ${m.test_score != null ? (m.test_score * 100).toFixed(2) : '—'}%\n` +
+          `恶意类 Recall: ${m.malicious_recall != null ? (m.malicious_recall * 100).toFixed(2) : '—'}%  F1: ${m.malicious_f1 != null ? (m.malicious_f1 * 100).toFixed(2) : '—'}%\n` +
+          `合并正常 pcap: ${data.merged_good_pcaps}，恶意: ${data.merged_bad_pcaps}\n` +
+          '详见下方「本次训练评估」与训练记录。'
       )
     } catch (e) {
       setError(e.message)
@@ -632,13 +646,32 @@ export default function ProtocolAnalysis() {
           )}
         </section>
 
+        {featureSchema?.feature_names?.length > 0 && (
+          <section className="pa-panel schema-panel">
+            <h2>
+              <Icon name="info" size={20} /> 流级特征说明（网安）
+            </h2>
+            <p className="muted small">
+              共 {featureSchema.feature_names.length} 维；含包长/时序、协议计数及扩展行为特征（包数、小包占比、端口多样性等）。
+            </p>
+            <div className="pa-schema-list">
+              {featureSchema.feature_names.map((name) => (
+                <details key={name} className="pa-schema-item">
+                  <summary>{name}</summary>
+                  <p>{featureSchema.descriptions?.[name] || '—'}</p>
+                </details>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="pa-panel train-panel">
           <h2>
             <Icon name="barChart" size={20} /> 模型重训（合并已标注会话）
           </h2>
           <p className="muted small">
-            在默认 goodx.csv / badx.csv 上，把你标注为「正常 / 恶意」的会话 pcap 再提取特征合并后重新训练随机森林，并覆盖保存
-            model.pkl；每次成功重训会在 train_test/model_archive 下保留该版本快照，可在下方训练记录里恢复。
+            在默认 goodx.csv / badx.csv 上，把你标注为「正常 / 恶意」的会话 pcap 再提取特征合并后重新训练随机森林（class_weight 平衡 + 基线对比），并覆盖保存
+            model.pkl；重训后请重新检测 pcap（特征维度已扩展）。
           </p>
           <label className="pa-check">
             <input
@@ -658,6 +691,112 @@ export default function ProtocolAnalysis() {
           </button>
         </section>
 
+        {lastTrainMetrics && (
+          <section className="pa-panel metrics-panel">
+            <h2>
+              <Icon name="chart" size={20} /> 本次训练评估
+            </h2>
+            <div className="pa-metrics-grid">
+              <div className="pa-metric-card">
+                <span className="label">测试准确率</span>
+                <strong>{lastTrainMetrics.test_score != null ? `${(lastTrainMetrics.test_score * 100).toFixed(2)}%` : '—'}</strong>
+              </div>
+              <div className="pa-metric-card">
+                <span className="label">恶意 Recall</span>
+                <strong>{lastTrainMetrics.malicious_recall != null ? `${(lastTrainMetrics.malicious_recall * 100).toFixed(2)}%` : '—'}</strong>
+              </div>
+              <div className="pa-metric-card">
+                <span className="label">恶意 F1</span>
+                <strong>{lastTrainMetrics.malicious_f1 != null ? `${(lastTrainMetrics.malicious_f1 * 100).toFixed(2)}%` : '—'}</strong>
+              </div>
+            </div>
+
+            {lastTrainMetrics.confusion_matrix?.matrix && (
+              <div className="pa-cm-block">
+                <h3>混淆矩阵（测试集）</h3>
+                <p className="muted small">{lastTrainMetrics.confusion_matrix.description}</p>
+                <table className="pa-table pa-cm-table">
+                  <thead>
+                    <tr>
+                      <th />
+                      <th>预测恶意</th>
+                      <th>预测安全</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <th>真实恶意</th>
+                      <td>{lastTrainMetrics.confusion_matrix.matrix[0]?.[0]}</td>
+                      <td>{lastTrainMetrics.confusion_matrix.matrix[0]?.[1]}</td>
+                    </tr>
+                    <tr>
+                      <th>真实安全</th>
+                      <td>{lastTrainMetrics.confusion_matrix.matrix[1]?.[0]}</td>
+                      <td>{lastTrainMetrics.confusion_matrix.matrix[1]?.[1]}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {lastTrainMetrics.feature_importance?.length > 0 && (
+              <div className="pa-sub-block">
+                <h3>特征重要性（随机森林 Top）</h3>
+                <ul className="pa-importance-list">
+                  {lastTrainMetrics.feature_importance.map((f) => (
+                    <li key={f.name}>
+                      <span>{f.name}</span>
+                      <div className="pa-imp-bar">
+                        <div
+                          className="pa-imp-fill"
+                          style={{
+                            width: `${Math.min(100, (f.importance / (lastTrainMetrics.feature_importance[0]?.importance || 1)) * 100)}%`,
+                          }}
+                        />
+                      </div>
+                      <span className="num">{(f.importance * 100).toFixed(2)}%</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {lastTrainMetrics.baseline_comparison?.length > 0 && (
+              <div className="pa-sub-block">
+                <h3>基线模型对比（同一测试集）</h3>
+                <div className="table-scroll">
+                  <table className="pa-table">
+                    <thead>
+                      <tr>
+                        <th>算法</th>
+                        <th>测试准确率</th>
+                        <th>恶意 Recall</th>
+                        <th>恶意 F1</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr className="highlight">
+                        <td>RandomForest（主模型）</td>
+                        <td>{lastTrainMetrics.test_score != null ? `${(lastTrainMetrics.test_score * 100).toFixed(2)}%` : '—'}</td>
+                        <td>{lastTrainMetrics.malicious_recall != null ? `${(lastTrainMetrics.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
+                        <td>{lastTrainMetrics.malicious_f1 != null ? `${(lastTrainMetrics.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
+                      </tr>
+                      {lastTrainMetrics.baseline_comparison.map((b) => (
+                        <tr key={b.algorithm}>
+                          <td>{b.algorithm}</td>
+                          <td>{b.test_accuracy != null ? `${(b.test_accuracy * 100).toFixed(2)}%` : '—'}</td>
+                          <td>{b.malicious_recall != null ? `${(b.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
+                          <td>{b.malicious_f1 != null ? `${(b.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
         <section className="pa-panel runs-panel">
           <h2>
             <Icon name="history" size={20} /> 训练记录（MongoDB model_runs）
@@ -670,39 +809,57 @@ export default function ProtocolAnalysis() {
                 <thead>
                   <tr>
                     <th>时间</th>
-                    <th>训练集准确率</th>
-                    <th>测试集准确率</th>
-                    <th>合并正常 pcap</th>
-                    <th>合并恶意 pcap</th>
+                    <th>测试准确率</th>
+                    <th>恶意 Recall</th>
+                    <th>恶意 F1</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
                   {modelRuns.map((r) => (
-                    <tr key={r.id}>
-                      <td className="muted">
-                        {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '—'}
-                      </td>
-                      <td>{r.train_score != null ? `${(r.train_score * 100).toFixed(2)}%` : '—'}</td>
-                      <td>{r.test_score != null ? `${(r.test_score * 100).toFixed(2)}%` : '—'}</td>
-                      <td>{r.extra_good_pcaps ?? 0}</td>
-                      <td>{r.extra_bad_pcaps ?? 0}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="pa-btn pa-btn-sm"
-                          disabled={!r.can_restore || restoreRunId != null || trainLoading || busy}
-                          title={
-                            r.can_restore
-                              ? '用该次训练的快照覆盖 model.pkl'
-                              : '无快照（本功能上线前的记录或文件已丢失）'
-                          }
-                          onClick={() => handleRestoreModelRun(r.id)}
-                        >
-                          {restoreRunId === r.id ? '恢复中…' : '恢复此版本'}
-                        </button>
-                      </td>
-                    </tr>
+                    <Fragment key={r.id}>
+                      <tr>
+                        <td className="muted">
+                          {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '—'}
+                        </td>
+                        <td>{r.test_score != null ? `${(r.test_score * 100).toFixed(2)}%` : '—'}</td>
+                        <td>{r.malicious_recall != null ? `${(r.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
+                        <td>{r.malicious_f1 != null ? `${(r.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
+                        <td className="pa-run-actions">
+                          <button
+                            type="button"
+                            className="pa-btn pa-btn-sm"
+                            onClick={() => setExpandedRunId(expandedRunId === r.id ? null : r.id)}
+                          >
+                            {expandedRunId === r.id ? '收起' : '详情'}
+                          </button>
+                          <button
+                            type="button"
+                            className="pa-btn pa-btn-sm"
+                            disabled={!r.can_restore || restoreRunId != null || trainLoading || busy}
+                            onClick={() => handleRestoreModelRun(r.id)}
+                          >
+                            {restoreRunId === r.id ? '恢复中…' : '恢复'}
+                          </button>
+                        </td>
+                      </tr>
+                      {expandedRunId === r.id && r.confusion_matrix?.matrix && (
+                        <tr key={`${r.id}-detail`} className="pa-run-detail-row">
+                          <td colSpan={5}>
+                            <span className="muted small">混淆矩阵 </span>
+                            <code>
+                              {JSON.stringify(r.confusion_matrix.matrix)}
+                            </code>
+                            {r.feature_importance?.length > 0 && (
+                              <span className="muted small">
+                                {' '}
+                                · Top 特征: {r.feature_importance.slice(0, 3).map((f) => f.name).join(', ')}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -823,7 +980,26 @@ const pageStyles = `
     min-width: 200px; font-size: 13px;
   }
   .preview-summary { color: #ccc; font-size: 14px; display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
-  .feature-panel, .train-panel, .runs-panel, .sessions-panel { margin-bottom: 16px; }
+  .feature-panel, .train-panel, .runs-panel, .sessions-panel, .schema-panel, .metrics-panel { margin-bottom: 16px; }
   .pa-check { display: flex; align-items: center; gap: 8px; color: #aaa; font-size: 13px; margin: 12px 0; cursor: pointer; }
   .train-panel .pa-btn.primary { margin-top: 8px; }
+  .pa-schema-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 280px; overflow-y: auto; }
+  .pa-schema-item { background: rgba(0,0,0,0.25); border: 1px solid #2a2a2a; border-radius: 10px; padding: 8px 10px; }
+  .pa-schema-item summary { cursor: pointer; color: var(--primary-light); font-size: 13px; font-weight: 600; }
+  .pa-schema-item p { margin: 8px 0 0; font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+  .pa-metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+  .pa-metric-card { flex: 1; min-width: 120px; padding: 12px 14px; border-radius: 12px; background: rgba(171,8,227,0.1); border: 1px solid rgba(171,8,227,0.25); }
+  .pa-metric-card .label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
+  .pa-metric-card strong { font-size: 20px; color: #fff; }
+  .pa-sub-block { margin-top: 18px; }
+  .pa-sub-block h3 { color: #ddd; font-size: 14px; margin: 0 0 10px; }
+  .pa-cm-table th, .pa-cm-table td { text-align: center; }
+  .pa-importance-list { list-style: none; margin: 0; padding: 0; }
+  .pa-importance-list li { display: grid; grid-template-columns: 120px 1fr 52px; gap: 10px; align-items: center; margin-bottom: 8px; font-size: 12px; color: #ccc; }
+  .pa-imp-bar { height: 6px; background: #2a2a2a; border-radius: 999px; overflow: hidden; }
+  .pa-imp-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); }
+  .pa-importance-list .num { text-align: right; color: #aaa; font-variant-numeric: tabular-nums; }
+  .pa-table tr.highlight td { color: var(--primary-light); font-weight: 600; }
+  .pa-run-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pa-run-detail-row td { background: rgba(0,0,0,0.2); font-size: 12px; }
 `

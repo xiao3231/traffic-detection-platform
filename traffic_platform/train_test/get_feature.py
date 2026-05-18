@@ -3,6 +3,8 @@
 import numpy as np
 from datetime import datetime
 
+from .feature_schema import PROTOCOL_LIST, default_feature_vector, security_extra_features
+
 
 # # 加载文件
 # def LoadFile():
@@ -22,7 +24,7 @@ class GetFeature():
     def MakeFeatures(self,file_name):
         dict = {}
         feature=[]
-        protocol_list=['IP','UDP','DNS ANS','DNS Qry','IPV6','ICMPv6','TLS']
+        protocol_list = list(PROTOCOL_LIST)
         
         # 检测文件类型：如果是pcap文件，先转换为csv
         if file_name.endswith('.pcap'):
@@ -116,6 +118,7 @@ class GetFeature():
             current_list=[len_mean,len_std,time_mean,time_std,num_unkown]
             for item in protocol_list:
                 current_list.append(dict[key][2][item])
+            current_list.extend(security_extra_features(dict[key][0], time_list, dict[key][3]))
             feature.append(current_list)
         return feature
 
@@ -262,8 +265,8 @@ class GetFeature():
         
         # 生成特征向量（与CSV的MakeFeatures一致）
         features = []
-        protocol_list = ['IP', 'UDP', 'DNS ANS', 'DNS Qry', 'IPV6', 'ICMPv6', 'TLS']
-        
+        protocol_list = list(PROTOCOL_LIST)
+
         for conn_key, flow_data in flows.items():
             time_list = []
             first_time = None
@@ -297,13 +300,14 @@ class GetFeature():
             current_list = [len_mean, len_std, time_mean, time_std, num_unknown]
             for proto in protocol_list:
                 current_list.append(flow_data['protocols'].get(proto, 0))
-            
+            current_list.extend(
+                security_extra_features(flow_data['sizes'], time_list, flow_data['ports'])
+            )
             features.append(current_list)
-        
-        # 如果没有提取到任何特征，返回一个默认特征向量
+
         if not features:
-            features = [[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]]
-        
+            features = [default_feature_vector()]
+
         return features
 
 

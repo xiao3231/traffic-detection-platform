@@ -12,7 +12,11 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC, SVC
 import joblib
 from sklearn import preprocessing, model_selection
-# from sklearn.metrics import confusion_matrix,classification_report
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    precision_recall_fscore_support,
+)
 import matplotlib.pyplot as plt
 import warnings
 import os
@@ -20,6 +24,7 @@ import os
 from .get_goodx import GetGoodx
 from .get_feature import GetFeature
 from .get_badx import GetBadx
+from .feature_schema import FEATURE_NAMES, LABEL_MALICIOUS, LABEL_SAFE
 import pprint
 import argparse
 
@@ -81,51 +86,132 @@ def plot_confusion_mat(confusion_mat):
     plt.show()
 
 
+def _evaluate_binary_classifier(clf, x_test, y_test):
+    """测试集评估：混淆矩阵 + 安全/恶意各类 Precision、Recall、F1。"""
+    y_true = y_test.ravel()
+    y_pred = clf.predict(x_test)
+    cm = confusion_matrix(y_true, y_pred, labels=[LABEL_MALICIOUS, LABEL_SAFE])
+    prec, rec, f1, _ = precision_recall_fscore_support(
+        y_true, y_pred, labels=[LABEL_MALICIOUS, LABEL_SAFE], zero_division=0
+    )
+    return {
+        'confusion_matrix': {
+            'labels': ['malicious', 'safe'],
+            'matrix': cm.tolist(),
+            'description': '行=真实标签，列=预测；顺序 malicious(0), safe(1)',
+        },
+        'malicious_precision': float(prec[0]),
+        'malicious_recall': float(rec[0]),
+        'malicious_f1': float(f1[0]),
+        'safe_precision': float(prec[1]),
+        'safe_recall': float(rec[1]),
+        'safe_f1': float(f1[1]),
+        'accuracy': float(accuracy_score(y_true, y_pred)),
+    }
+
+
+def _feature_importance_list(model, top_n=12):
+    if not hasattr(model, 'feature_importances_'):
+        return []
+    names = FEATURE_NAMES
+    if len(model.feature_importances_) != len(names):
+        names = [f'f{i}' for i in range(len(model.feature_importances_))]
+    pairs = sorted(
+        zip(names, model.feature_importances_),
+        key=lambda x: -float(x[1]),
+    )
+    return [{'name': n, 'importance': float(v)} for n, v in pairs[:top_n]]
+
+
 def train(x, y):
     """
-    使用随机森林训练模型并保存效果最好的
+    随机森林（主模型）+ 类别不平衡处理 + 测试集网安指标 + 基线对比 + 特征重要性。
     """
-    # 将数据集分为训练集和测试集
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=42)
-    
-    # 使用随机森林（效果通常最好）
+    try:
+        x_train, x_test, y_train, y_test = train_test_split(
+            x, y, test_size=0.3, random_state=42, stratify=y
+        )
+    except ValueError:
+        x_train, x_test, y_train, y_test = train_test_split(
+            x, y, test_size=0.3, random_state=42
+        )
+    y_train_flat = y_train.ravel()
+    y_test_flat = y_test.ravel()
+
     model = RandomForestClassifier(
-        criterion='gini', 
-        max_depth=100, 
+        criterion='gini',
+        max_depth=100,
         n_estimators=200,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
+        class_weight='balanced_subsample',
     )
-    
-    # 训练模型
-    model.fit(x_train, y_train.ravel())
-    
-    # 评估模型
-    train_score = model.score(x_train, y_train)
-    test_score = model.score(x_test, y_test)
-    
+    model.fit(x_train, y_train_flat)
+
+    train_score = float(model.score(x_train, y_train_flat))
+    test_score = float(model.score(x_test, y_test_flat))
+    eval_metrics = _evaluate_binary_classifier(model, x_test, y_test)
+
     print(f"训练集准确率: {train_score:.4f}")
     print(f"测试集准确率: {test_score:.4f}")
-    
-    # 保存模型到正确路径
+    print(f"恶意类 Recall: {eval_metrics['malicious_recall']:.4f}, F1: {eval_metrics['malicious_f1']:.4f}")
+    print(f"混淆矩阵:\n{eval_metrics['confusion_matrix']['matrix']}")
+
+    baseline_comparison = []
+    baseline_specs = [
+        ('LogisticRegression', LogisticRegression(max_iter=800, class_weight='balanced', random_state=42)),
+        ('DecisionTree', DecisionTreeClassifier(max_depth=24, class_weight='balanced', random_state=42)),
+    ]
+    for algo_name, clf in baseline_specs:
+        clf.fit(x_train, y_train_flat)
+        row = _evaluate_binary_classifier(clf, x_test, y_test)
+        row['algorithm'] = algo_name
+        row['test_accuracy'] = row.pop('accuracy')
+        baseline_comparison.append(row)
+
+    feature_importance = _feature_importance_list(model)
+
     model_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'model.pkl')
-    joblib.dump(model, model_path)
+    artifact = {
+        'version': 2,
+        'model': model,
+        'feature_names': FEATURE_NAMES,
+        'primary_algorithm': 'RandomForest',
+    }
+    joblib.dump(artifact, model_path)
     print(f"模型已保存到: {model_path}")
-    return {'train_score': float(train_score), 'test_score': float(test_score)}
+
+    return {
+        'train_score': train_score,
+        'test_score': test_score,
+        'primary_algorithm': 'RandomForest',
+        'feature_count': len(FEATURE_NAMES),
+        **eval_metrics,
+        'feature_importance': feature_importance,
+        'baseline_comparison': baseline_comparison,
+    }
+
+
+def _load_classifier():
+    model_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'model.pkl')
+    loaded = joblib.load(model_path)
+    if isinstance(loaded, dict):
+        if 'model' in loaded:
+            return loaded['model']
+        if 'rf_model' in loaded:
+            return loaded['rf_model']
+    return loaded
 
 
 def predicts(x):
-    model_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), 'model.pkl')
-    clf = joblib.load(model_path)  # 加载已保存的模型
-    
-    # 支持组合模型和新格式
-    if isinstance(clf, dict) and 'rf_model' in clf:
-        rf_model = clf['rf_model']
-        # 只使用 RF 分类器作为主要检测
-        rf_predictions = rf_model.predict(x)  # 1=安全, 0=恶意
-        return rf_predictions
-    else:
-        return clf.predict(x)
+    clf = _load_classifier()
+    x_arr = np.asarray(x)
+    if hasattr(clf, 'n_features_in_') and x_arr.ndim == 2 and x_arr.shape[1] != clf.n_features_in_:
+        raise ValueError(
+            f'特征维度 {x_arr.shape[1]} 与已加载模型 {clf.n_features_in_} 不一致，'
+            '请在协议分析页执行一次「模型重训」后再检测。'
+        )
+    return clf.predict(x_arr)
 
 
 def predicts_pcap(pcap_path):

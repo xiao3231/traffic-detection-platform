@@ -207,43 +207,145 @@
 .home-marquee-wrap {
   margin-top: 22px;
   overflow: hidden;
-  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
 }
 
-.home-marquee {
+.home-marquee-track {
   display: flex;
-  gap: 28px;
   width: max-content;
-  animation: home-marquee 28s linear infinite;
+  animation: home-marquee-scroll 24s linear infinite;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
-@keyframes home-marquee {
-  0% { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
+.home-marquee-wrap:hover .home-marquee-track {
+  animation-play-state: paused;
+}
+
+.home-marquee-group {
+  display: flex;
+  flex-shrink: 0;
+  gap: 16px;
+  padding-right: 16px;
+}
+
+@keyframes home-marquee-scroll {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-marquee-track {
+    animation: none;
+    flex-wrap: wrap;
+    justify-content: center;
+    width: 100%;
+    max-width: 720px;
+    margin: 0 auto;
+  }
+
+  .home-marquee-group[aria-hidden='true'] {
+    display: none;
+  }
 }
 
 .home-chip {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: 10px;
+  padding: 10px 16px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border);
   color: var(--text-secondary);
   font-size: 12px;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.home-chip-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  line-height: 1.2;
+}
+
+.home-chip-label {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.home-chip-sub {
+  font-size: 11px;
+  opacity: 0.72;
 }
 
 .home-chip img {
   opacity: 0.9;
+  flex-shrink: 0;
 }
 
+/* Bento 功能卡：管理员 5 张 / 普通用户 3 张 */
 .home-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 18px;
+  gap: 16px;
   margin-bottom: 40px;
+}
+
+.home-cards--bento-5,
+.home-cards--bento-3 {
+  grid-template-columns: repeat(3, 1fr);
+  grid-auto-rows: minmax(132px, auto);
+}
+
+/* 5 张：左上大卡 + 右上两小 + 下排宽 + 右下小 */
+.home-cards--bento-5 .home-card:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+}
+
+.home-cards--bento-5 .home-card:nth-child(2) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.home-cards--bento-5 .home-card:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.home-cards--bento-5 .home-card:nth-child(4) {
+  grid-column: 1 / 3;
+  grid-row: 3;
+}
+
+.home-cards--bento-5 .home-card:nth-child(5) {
+  grid-column: 3;
+  grid-row: 3;
+}
+
+/* 3 张：左上大卡 + 右侧上下各一 */
+.home-cards--bento-3 .home-card:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+}
+
+.home-cards--bento-3 .home-card:nth-child(2) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.home-cards--bento-3 .home-card:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.home-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .home-card {
@@ -258,15 +360,151 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
+  min-height: 0;
   transition: transform 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
   overflow: hidden;
   animation: home-fade-up 0.65s ease-out both;
 }
 
 .home-card:nth-child(1) { animation-delay: 0.08s; }
-.home-card:nth-child(2) { animation-delay: 0.14s; }
-.home-card:nth-child(3) { animation-delay: 0.2s; }
-.home-card:nth-child(4) { animation-delay: 0.26s; }
+.home-card:nth-child(2) { animation-delay: 0.12s; }
+.home-card:nth-child(3) { animation-delay: 0.16s; }
+.home-card:nth-child(4) { animation-delay: 0.2s; }
+.home-card:nth-child(5) { animation-delay: 0.24s; }
+
+/* 主卡：左侧 2×2 大卡（管理员为抓包协议分析，普通用户为流量检测） */
+.home-card--hero {
+  padding: 28px 26px 24px;
+  background:
+    linear-gradient(145deg, rgba(171, 8, 227, 0.14) 0%, rgba(26, 26, 26, 0.92) 42%),
+    rgba(26, 26, 26, 0.88);
+  border-color: rgba(171, 8, 227, 0.32);
+}
+
+.home-card--hero::after {
+  content: '';
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  right: -48px;
+  bottom: -64px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(199, 62, 245, 0.22) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.home-card--hero .home-card-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  margin-bottom: 18px;
+}
+
+.home-card--hero h2 {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.home-card--hero p {
+  font-size: 14px;
+  max-width: 36ch;
+  margin-bottom: 20px;
+}
+
+/* 侧栏小卡 */
+.home-card--side {
+  padding: 18px 16px 16px;
+}
+
+.home-card--side .home-card-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+
+.home-card--side h2 {
+  font-size: 15px;
+}
+
+.home-card--side p {
+  font-size: 12px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* 底行宽卡：用户管理 */
+.home-card--wide {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto;
+  align-items: center;
+  column-gap: 18px;
+  row-gap: 4px;
+  padding: 20px 24px;
+  background:
+    linear-gradient(90deg, rgba(171, 8, 227, 0.1) 0%, rgba(26, 26, 26, 0.9) 55%),
+    rgba(26, 26, 26, 0.88);
+}
+
+.home-card--wide .home-card-icon {
+  grid-row: 1 / 3;
+  margin-bottom: 0;
+}
+
+.home-card--wide h2 {
+  grid-column: 2;
+  margin-bottom: 0;
+  align-self: end;
+}
+
+.home-card--wide p {
+  grid-column: 2;
+  margin-bottom: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  align-self: start;
+}
+
+.home-card--wide .home-card-cta {
+  grid-column: 3;
+  grid-row: 1 / 3;
+  align-self: center;
+}
+
+/* 紧凑卡：个人中心 */
+.home-card--compact {
+  padding: 16px;
+  justify-content: center;
+}
+
+.home-card--compact .home-card-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 10px;
+}
+
+.home-card--compact h2 {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+
+.home-card--compact p {
+  font-size: 11px;
+  margin-bottom: 10px;
+  -webkit-line-clamp: 2;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 
 .home-card::before {
   content: '';
@@ -378,8 +616,62 @@
   font-weight: 600;
 }
 
+@media (max-width: 900px) {
+  .home-cards--bento-5,
+  .home-cards--bento-3 {
+    grid-template-columns: 1fr 1fr;
+    grid-auto-rows: minmax(120px, auto);
+  }
+
+  .home-cards--bento-5 .home-card:nth-child(1),
+  .home-cards--bento-3 .home-card:nth-child(1) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .home-cards--bento-5 .home-card:nth-child(2) { grid-column: 1; grid-row: auto; }
+  .home-cards--bento-5 .home-card:nth-child(3) { grid-column: 2; grid-row: auto; }
+  .home-cards--bento-5 .home-card:nth-child(4) { grid-column: 1 / -1; grid-row: auto; }
+  .home-cards--bento-5 .home-card:nth-child(5) { grid-column: 1 / -1; grid-row: auto; }
+
+  .home-cards--bento-3 .home-card:nth-child(2) { grid-column: 1; grid-row: auto; }
+  .home-cards--bento-3 .home-card:nth-child(3) { grid-column: 2; grid-row: auto; }
+
+  .home-card--wide {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto;
+  }
+
+  .home-card--wide .home-card-cta {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    margin-top: 8px;
+  }
+}
+
 @media (max-width: 640px) {
   .home-main {
     padding: 20px 16px 88px;
+  }
+
+  .home-cards--bento-5,
+  .home-cards--bento-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .home-cards--bento-5 .home-card:nth-child(n),
+  .home-cards--bento-3 .home-card:nth-child(n) {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .home-card--hero p {
+    max-width: none;
+  }
+
+  .home-card--side p,
+  .home-card--compact p {
+    -webkit-line-clamp: unset;
+    display: block;
   }
 }

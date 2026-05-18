@@ -23,6 +23,7 @@ from bson.errors import InvalidId
 
 from traffic_platform.train_test.get_feature import GetFeature
 from traffic_platform.train_test.main import predicts, run, run_with_extra_pcaps
+from traffic_platform.train_test.feature_schema import FEATURE_NAMES, feature_schema_payload
 
 PROTOCOL_KEYS = ('TCP', 'UDP', 'ICMP', 'ARP', 'HTTP', 'Other')
 
@@ -70,10 +71,7 @@ def _resolved_model_archive_file(rel_path: str):
         return None
     return full if os.path.isfile(full) else None
 
-CAPTURE_FEATURE_COLUMNS = [
-    'len_mean', 'len_std', 'time_mean', 'time_std', 'num_unknown',
-    'IP', 'UDP', 'DNS ANS', 'DNS Qry', 'IPV6', 'ICMPv6', 'TLS',
-]
+CAPTURE_FEATURE_COLUMNS = list(FEATURE_NAMES)
 
 
 def _serialize_detection_doc(doc):
@@ -731,6 +729,12 @@ def train_rebuild():
         'created_at': datetime.now(timezone.utc),
         'train_score': metrics.get('train_score'),
         'test_score': metrics.get('test_score'),
+        'malicious_recall': metrics.get('malicious_recall'),
+        'malicious_f1': metrics.get('malicious_f1'),
+        'confusion_matrix': metrics.get('confusion_matrix'),
+        'feature_importance': metrics.get('feature_importance'),
+        'baseline_comparison': metrics.get('baseline_comparison'),
+        'feature_count': metrics.get('feature_count'),
         'extra_good_pcaps': len(good_paths),
         'extra_bad_pcaps': len(bad_paths),
         'include_labeled_captures': use_labeled,
@@ -748,6 +752,15 @@ def train_rebuild():
         'run_id': run_id,
         'model_snapshot': rel_snapshot,
     }), 200
+
+
+@app.route('/api/train/feature-schema', methods=['GET'])
+def train_feature_schema():
+    """返回流级特征名称及网安含义（文档说明）。"""
+    denied = _require_admin()
+    if denied:
+        return denied
+    return jsonify(feature_schema_payload()), 200
 
 
 @app.route('/api/train/runs', methods=['GET'])
@@ -768,6 +781,12 @@ def train_runs_list():
             'id': str(doc['_id']),
             'train_score': doc.get('train_score'),
             'test_score': doc.get('test_score'),
+            'malicious_recall': doc.get('malicious_recall'),
+            'malicious_f1': doc.get('malicious_f1'),
+            'confusion_matrix': doc.get('confusion_matrix'),
+            'feature_importance': doc.get('feature_importance'),
+            'baseline_comparison': doc.get('baseline_comparison'),
+            'feature_count': doc.get('feature_count'),
             'extra_good_pcaps': doc.get('extra_good_pcaps', 0),
             'extra_bad_pcaps': doc.get('extra_bad_pcaps', 0),
             'created_at': doc['created_at'].isoformat() if doc.get('created_at') else None,
