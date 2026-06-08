@@ -45,5 +45,5 @@ cd ..
 ## 说明
 
 - 根目录的 `model.pkl`、`.venv/`、`node_modules/`、`upload/` 等已在 `.gitignore` 中，克隆后需在本地重新训练或放入模型、并执行上述安装命令。
-- **特征已扩展为 16 维**（见 `traffic_platform/train_test/feature_schema.py`）。旧版 11 维 `model.pkl` 与当前代码不兼容，请在管理员「协议分析 → 模型重训」执行一次训练后再做 pcap 检测。
+- **流级特征为 17 维**（见 `traffic_platform/train_test/feature_schema.py`：基础统计 5 维 + 协议计数 7 维 + 行为扩展 5 维）。旧版 11/16 维 `model.pkl` 与当前代码不兼容，请在管理员「协议分析 → 模型重训」执行一次训练后再做 pcap 检测。
 - 训练会输出：**混淆矩阵**、**恶意类 Recall/F1**、**特征重要性**、与 **逻辑回归 / 决策树** 的基线对比；`GET /api/train/feature-schema` 可查看各特征网安含义。

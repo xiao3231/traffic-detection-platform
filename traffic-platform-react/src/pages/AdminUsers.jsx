@@ -5,6 +5,47 @@ import Icon from '../components/Icon'
 import { apiUrl, readJsonResponse } from '../api'
 import './AdminUsers.css'
 
+function PasswordInput({ label, value, onChange, placeholder, autoComplete = 'new-password' }) {
+  const [visible, setVisible] = useState(false)
+  return (
+    <label className="adm-field-label">
+      {label}
+      <div className="adm-password-wrap">
+        <input
+          type={visible ? 'text' : 'password'}
+          value={value}
+          onChange={onChange}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+        />
+        <button
+          type="button"
+          className="adm-password-toggle"
+          onClick={() => setVisible((v) => !v)}
+          aria-label={visible ? '隐藏密码' : '显示密码'}
+          title={visible ? '隐藏密码' : '显示密码'}
+        >
+          {visible ? (
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 6.5c3.86 0 7.06 2.51 8.24 6-1.18 3.49-4.38 6-8.24 6s-7.06-2.51-8.24-6C4.94 9.01 8.14 6.5 12 6.5m0-2C6.76 4.5 2.5 7.86 1 12c1.5 4.14 5.76 7.5 11 7.5s9.5-3.36 11-7.5C21.5 7.86 17.24 4.5 12 4.5zm0 5a2.5 2.5 0 0 1 0 5 2.5 2.5 0 0 1 0-5z"
+              />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+              <path
+                fill="currentColor"
+                d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5C21.27 7.61 17 4.5 12 4.5zm0 12.5c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z"
+              />
+            </svg>
+          )}
+        </button>
+      </div>
+    </label>
+  )
+}
+
 export default function AdminUsers() {
   const navigate = useNavigate()
   const [gateOk, setGateOk] = useState(false)
@@ -17,6 +58,12 @@ export default function AdminUsers() {
   const [error, setError] = useState(null)
   const [passwordUser, setPasswordUser] = useState(null)
   const [newPassword, setNewPassword] = useState('')
+  const [showCreate, setShowCreate] = useState(false)
+  const [createUsername, setCreateUsername] = useState('')
+  const [createPassword, setCreatePassword] = useState('')
+  const [createConfirm, setCreateConfirm] = useState('')
+  const [createRole, setCreateRole] = useState('user')
+  const [createLoading, setCreateLoading] = useState(false)
   const debounceRef = useRef(null)
 
   useEffect(() => {
@@ -109,6 +156,36 @@ export default function AdminUsers() {
     }
   }
 
+  const createUser = async () => {
+    setCreateLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl('/api/admin/users'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: createUsername.trim(),
+          password: createPassword,
+          confirm_password: createConfirm,
+          role: createRole,
+        }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '创建失败')
+      setShowCreate(false)
+      setCreateUsername('')
+      setCreatePassword('')
+      setCreateConfirm('')
+      setCreateRole('user')
+      await load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setCreateLoading(false)
+    }
+  }
+
   if (!gateOk) {
     return (
       <div className="adm-page">
@@ -128,7 +205,7 @@ export default function AdminUsers() {
           <div className="adm-headline-bg" aria-hidden />
           <div className="adm-headline-inner">
             <h1>用户管理</h1>
-            <p>搜索用户、查看检测提交次数与不重复 pcap 名数量，重置密码或调整账号状态（封禁 / 解封）。</p>
+            <p>创建用户、搜索账号、查看检测统计，重置密码或封禁 / 解封。</p>
           </div>
         </section>
 
@@ -146,6 +223,9 @@ export default function AdminUsers() {
           <span className="adm-count">
             {loading ? '加载中…' : `共 ${total} 个账号`}
           </span>
+          <button type="button" className="adm-btn primary" onClick={() => setShowCreate(true)}>
+            创建用户
+          </button>
         </div>
 
         {error && (
@@ -197,6 +277,66 @@ export default function AdminUsers() {
             </article>
           ))}
         </div>
+
+        {showCreate && (
+          <div
+            className="adm-modal-overlay"
+            role="presentation"
+            onClick={(e) => e.target === e.currentTarget && !createLoading && setShowCreate(false)}
+          >
+            <div className="adm-modal" role="dialog" aria-labelledby="adm-create-title">
+              <h3 id="adm-create-title">创建用户</h3>
+              <p className="sub">由管理员新建账号，操作将记入审计日志。</p>
+              <label className="adm-field-label">
+                用户名（3–10 位）
+                <input
+                  type="text"
+                  value={createUsername}
+                  onChange={(e) => setCreateUsername(e.target.value)}
+                  placeholder="请输入用户名"
+                  autoComplete="off"
+                />
+              </label>
+              <PasswordInput
+                label="密码（6–16 位）"
+                value={createPassword}
+                onChange={(e) => setCreatePassword(e.target.value)}
+                placeholder="请输入密码"
+              />
+              <PasswordInput
+                label="确认密码"
+                value={createConfirm}
+                onChange={(e) => setCreateConfirm(e.target.value)}
+                placeholder="再次输入密码"
+              />
+              <label className="adm-field-label">
+                身份
+                <select value={createRole} onChange={(e) => setCreateRole(e.target.value)}>
+                  <option value="user">普通用户</option>
+                  <option value="admin">管理员</option>
+                </select>
+              </label>
+              <div className="adm-modal-actions">
+                <button
+                  type="button"
+                  className="adm-btn"
+                  disabled={createLoading}
+                  onClick={() => setShowCreate(false)}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="adm-btn primary"
+                  disabled={createLoading}
+                  onClick={createUser}
+                >
+                  {createLoading ? '创建中…' : '确认创建'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {passwordUser && (
           <div

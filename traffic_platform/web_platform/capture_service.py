@@ -11,6 +11,54 @@ from scapy.layers.inet import IP, TCP, UDP, ICMP
 from scapy.layers.inet6 import IPv6
 from scapy.interfaces import get_if_list
 
+_BPF_PROTO_MAP = {
+    'TCP': 'tcp',
+    'UDP': 'udp',
+    'ICMP': 'icmp',
+    'IP': 'ip',
+    'ARP': 'arp',
+    'IPV6': 'ipv6',
+}
+
+
+def _normalize_bpf(expr):
+    """tcpdump/BPF 协议名需小写，自动把 UDP、TCP 等转为 udp、tcp。"""
+    expr = (expr or '').strip()
+    if not expr:
+        return ''
+    return ' '.join(_BPF_PROTO_MAP.get(token, token) for token in expr.split())
+
+
+def _validate_bpf(expr):
+    if not expr:
+        return
+    try:
+        from scapy.arch.common import compile_filter
+
+        compile_filter(expr)
+    except Exception as exc:
+        raise ValueError(
+            f'BPF 表达式无法识别：「{expr}」。'
+            '协议名请用小写，例如 udp、tcp、icmp，或 tcp port 80'
+        ) from exc
+
+
+def _prepare_bpf(expr):
+    normalized = _normalize_bpf(expr)
+    _validate_bpf(normalized)
+    return normalized
+
+
+def _friendly_capture_error(exc):
+    msg = str(exc)
+    if 'Failed to compile filter expression' in msg:
+        return (
+            'BPF 过滤表达式写错了（不是“文件里没有这种包”）。'
+            '协议名请用小写：udp、tcp、icmp，例如 tcp port 80。'
+            f'原始错误：{msg}'
+        )
+    return msg
+
 
 def _timestamp2time(ts):
     return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(float(ts)))
@@ -100,6 +148,7 @@ class CaptureService:
         self._bpf = ''
         self._mode = 'idle'
         self._session_meta = {}
+        self._offline_path = None
 
     def status(self):
         with self._lock:
@@ -111,6 +160,14 @@ class CaptureService:
                 'bpf_filter': self._bpf,
                 'session': dict(self._session_meta),
                 'last_error': self._session_meta.get('error'),
+                'has_offline_source': bool(
+                    self._offline_path and os.path.isfile(self._offline_path)
+                ),
+                'offline_source': (
+                    os.path.basename(self._offline_path)
+                    if self._offline_path
+                    else None
+                ),
             }
 
     def list_interfaces(self):
@@ -135,6 +192,11 @@ class CaptureService:
             self._pending.clear()
             return out
 
+    def list_summaries(self):
+        """返回缓冲区中全部包的摘要（供离线解析结束后一次性同步列表）。"""
+        with self._lock:
+            return [_summarize_packet(pkt, i + 1) for i, pkt in enumerate(self._packets)]
+
     def _sniff_loop(self, offline=None):
         try:
             sniff(
@@ -147,7 +209,7 @@ class CaptureService:
             )
         except Exception as exc:
             with self._lock:
-                self._session_meta['error'] = str(exc)
+                self._session_meta['error'] = _friendly_capture_error(exc)
         finally:
             with self._lock:
                 self._running = False
@@ -155,7 +217,8 @@ class CaptureService:
 
     def start_live(self, bpf_filter=''):
         self._reset_buffer()
-        self._bpf = bpf_filter or ''
+        self._offline_path = None
+        self._bpf = _prepare_bpf(bpf_filter)
         self._stop_event.clear()
         self._paused = False
         self._running = True
@@ -163,24 +226,48 @@ class CaptureService:
         self._session_meta = {
             'started_at': datetime.now(timezone.utc),
             'bpf_filter': self._bpf,
+            'session_mode': 'live',
         }
         self._thread = threading.Thread(target=self._sniff_loop, kwargs={'offline': None}, daemon=True)
         self._thread.start()
 
-    def load_offline(self, pcap_path, bpf_filter=''):
+    def load_offline(self, pcap_path, bpf_filter='', opened_at=None):
+        path = os.path.abspath(pcap_path)
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f'pcap 文件不存在: {path}')
+        with self._lock:
+            keep_opened = None
+            if self._offline_path and os.path.abspath(self._offline_path) == path:
+                keep_opened = self._session_meta.get('opened_at')
+        opened = opened_at or keep_opened or datetime.now(timezone.utc)
         self._reset_buffer()
-        self._bpf = bpf_filter or ''
+        self._offline_path = path
+        self._bpf = _prepare_bpf(bpf_filter)
         self._stop_event.clear()
         self._paused = False
         self._running = True
         self._mode = 'offline'
         self._session_meta = {
-            'started_at': datetime.now(timezone.utc),
+            'started_at': opened,
+            'opened_at': opened,
             'bpf_filter': self._bpf,
-            'source_file': os.path.basename(pcap_path),
+            'source_file': os.path.basename(path),
+            'session_mode': 'offline',
         }
-        self._thread = threading.Thread(target=self._sniff_loop, kwargs={'offline': pcap_path}, daemon=True)
+        self._thread = threading.Thread(target=self._sniff_loop, kwargs={'offline': path}, daemon=True)
         self._thread.start()
+
+    def apply_bpf(self, bpf_filter=''):
+        """对已打开的离线 pcap 按 BPF 重新解析（需先完成打开或上一次过滤）。"""
+        if self._running:
+            raise RuntimeError('请先停止当前任务')
+        if not self._offline_path or not os.path.isfile(self._offline_path):
+            raise RuntimeError('请先使用「打开 pcap」加载文件后再应用过滤器')
+        self.load_offline(self._offline_path, bpf_filter=bpf_filter)
+
+    def cancel_bpf(self):
+        """清除 BPF 并重新加载当前离线 pcap（显示全部包）。"""
+        self.apply_bpf('')
 
     def pause(self):
         with self._lock:
@@ -204,6 +291,7 @@ class CaptureService:
     def clear(self):
         self.stop()
         self._reset_buffer()
+        self._offline_path = None
         self._mode = 'idle'
 
     def get_packet_detail(self, index):
@@ -238,11 +326,15 @@ class CaptureService:
 
     def snapshot_for_db(self):
         with self._lock:
+            meta = dict(self._session_meta)
+            # 有离线上传路径或原始文件名 → 离线；否则为网卡实时抓包
+            is_upload = bool(self._offline_path) or bool(meta.get('source_file'))
             return {
                 'packet_count': len(self._packets),
                 'bpf_filter': self._bpf,
                 'mode': self._mode,
-                'meta': dict(self._session_meta),
+                'meta': meta,
+                'capture_origin': 'offline' if is_upload else 'live',
             }
 
 

@@ -81,6 +81,7 @@ function cardIconSize(cardSize) {
   return SIDE_ICON
 }
 
+/**卡片布局 */
 function HomeFeatureBento({ isAdmin }) {
   const cards = homeFeatureCards(isAdmin)
   const bentoMod = cards.length === 5 ? 'home-cards--bento-5' : 'home-cards--bento-3'
@@ -113,7 +114,7 @@ const MARQUEE_TECH_STACK = [
   { label: 'Scapy', sub: 'pcap 解析与抓包', icon: 'scan' },
   { label: '随机森林', sub: '主检测模型', icon: 'barChart' },
   { label: 'scikit-learn', sub: '训练与基线对比', icon: 'chart' },
-  { label: '16 维流特征', sub: '行为 + 协议统计', icon: 'file' },
+  { label: '17 维流特征', sub: '统计 + 协议 + 行为', icon: 'file' },
   { label: 'joblib', sub: 'model.pkl 持久化', icon: 'folder' },
   { label: 'Flask API', sub: '检测 / 重训接口', icon: 'settings' },
   { label: 'MongoDB', sub: '检测与训练记录', icon: 'history' },
@@ -122,6 +123,7 @@ const MARQUEE_TECH_STACK = [
   { label: 'PCAP 流水线', sub: '上传 → 特征 → 判别', icon: 'filePcap' },
 ]
 
+/** 技术条显示 */
 function TechMarquee() {
   const chip = (item, key) => (
     <span key={key} className="home-chip">
@@ -152,17 +154,20 @@ function formatClock(d) {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`
 }
 
+  /** 默认导出组件 */
 export default function Home() {
   const [loggedIn, setLoggedIn] = useState(false)
   const [role, setRole] = useState(null)
   const [clock, setClock] = useState(() => formatClock(new Date()))
   const [apiOk, setApiOk] = useState(null)
 
+  /** 定时更新时间 */
   useEffect(() => {
     const t = setInterval(() => setClock(formatClock(new Date())), 1000)
     return () => clearInterval(t)
   }, [])
 
+  /** 获取会话信息 */
   useEffect(() => {
     let cancelled = false
     fetch(apiUrl('/api/check-session'), { credentials: 'include' })
@@ -181,6 +186,7 @@ export default function Home() {
     }
   }, [])
 
+  /** 检测后端连接状态 */
   useEffect(() => {
     let cancelled = false
     const ping = () => {

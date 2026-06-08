@@ -291,6 +291,15 @@
   color: var(--text-secondary);
 }
 
+.adm-field-label {
+  display: block;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.adm-field-label input,
+.adm-field-label select,
 .adm-modal input {
   width: 100%;
   padding: 12px 14px;
@@ -299,8 +308,45 @@
   background: #111;
   color: #fff;
   font-size: 14px;
-  margin-bottom: 16px;
+  margin-top: 6px;
   box-sizing: border-box;
+}
+
+.adm-password-wrap {
+  position: relative;
+  margin-top: 6px;
+}
+
+.adm-password-wrap input {
+  width: 100%;
+  padding-right: 42px;
+  margin-top: 0;
+}
+
+.adm-password-toggle {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  cursor: pointer;
+}
+
+.adm-password-toggle:hover {
+  color: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.adm-field-label select {
+  cursor: pointer;
 }
 
 .adm-modal-actions {

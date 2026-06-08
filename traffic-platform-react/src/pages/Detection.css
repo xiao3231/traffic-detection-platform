@@ -268,6 +268,48 @@
   color: #ff6b6b;
 }
 
+.detection-content .det-threshold-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin: 14px 0 8px;
+}
+
+.detection-content .det-threshold-row label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.detection-content .det-threshold-row input {
+  width: 120px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #111;
+  color: #fff;
+  font-size: 13px;
+}
+
+.detection-content .det-threshold-hint {
+  margin: 0 0 14px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.detection-content .det-flow-summary {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid #333;
+}
+
 .detection-content .detect-btn {
   width: 100%;
   padding: 14px 16px;

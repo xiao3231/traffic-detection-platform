@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" width="1200" height="720">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; }
+      .entity { fill: #ffffff; stroke: #000000; stroke-width: 2; }
+      .relation { fill: #ffffff; stroke: #000000; stroke-width: 2; }
+      .line { stroke: #000000; stroke-width: 2; fill: none; }
+      .t { fill: #000000; font-family: "Microsoft YaHei", SimHei, sans-serif; font-size: 16px; text-anchor: middle; }
+      .t-sm { font-size: 14px; }
+      .t-db { font-size: 12px; fill: #333; }
+      .card { font-size: 13px; }
+    </style>
+  </defs>
+  <rect class="bg" width="1200" height="720"/>
+  <rect class="entity" x="80" y="300" width="120" height="56"/>
+  <text class="t" x="140" y="325">用户</text>
+  <text class="t t-db" x="140" y="345">users</text>
+  <rect class="entity" x="420" y="80" width="140" height="56"/>
+  <text class="t" x="490" y="105">检测记录</text>
+  <text class="t t-db" x="490" y="125">detection_records</text>
+  <rect class="entity" x="420" y="300" width="140" height="56"/>
+  <text class="t" x="490" y="325">抓包会话</text>
+  <text class="t t-db" x="490" y="345">capture_sessions</text>
+  <rect class="entity" x="420" y="520" width="160" height="56"/>
+  <text class="t" x="500" y="545">模型训练记录</text>
+  <text class="t t-db" x="500" y="565">model_runs</text>
+  <polygon class="relation" points="290,108 330,128 290,148 250,128"/>
+  <text class="t t-sm" x="290" y="133">产生</text>
+  <polygon class="relation" points="290,308 330,328 290,348 250,328"/>
+  <text class="t t-sm" x="290" y="333">保存</text>
+  <polygon class="relation" points="290,528 330,548 290,568 250,548"/>
+  <text class="t t-sm" x="290" y="553">发起</text>
+  <polygon class="relation" points="700,400 740,420 700,440 660,420"/>
+  <text class="t t-sm" x="700" y="425">参与训练</text>
+  <line class="line" x1="200" y1="320" x2="250" y2="128"/>
+  <line class="line" x1="330" y1="128" x2="420" y2="108"/>
+  <text class="t card" x="215" y="210">1</text>
+  <text class="t card" x="375" y="108">n</text>
+  <line class="line" x1="200" y1="328" x2="250" y2="328"/>
+  <line class="line" x1="330" y1="328" x2="420" y2="328"/>
+  <text class="t card" x="215" y="318">1</text>
+  <text class="t card" x="375" y="318">n</text>
+  <line class="line" x1="200" y1="340" x2="250" y2="548"/>
+  <line class="line" x1="330" y1="548" x2="420" y2="548"/>
+  <text class="t card" x="215" y="455">1</text>
+  <text class="t card" x="375" y="538">n</text>
+  <line class="line" x1="560" y1="356" x2="660" y2="420"/>
+  <line class="line" x1="740" y1="420" x2="500" y2="520"/>
+  <text class="t card" x="600" y="375">m</text>
+  <text class="t card" x="640" y="490">n</text>
+  <rect x="820" y="60" width="340" height="220" fill="none" stroke="#000" stroke-width="1"/>
+  <text class="t" x="990" y="90" style="font-size:15px;font-weight:bold">图例说明</text>
+  <rect class="entity" x="840" y="110" width="70" height="32"/><text class="t t-sm" x="875" y="132">实体</text>
+  <polygon class="relation" points="940,110 960,126 940,142 920,126"/><text class="t t-sm" x="990" y="132">联系</text>
+  <text class="t t-db" x="990" y="165" style="font-size:12px">矩形：中文名 + MongoDB 集合名</text>
+  <text class="t t-db" x="990" y="188" style="font-size:12px">1：一个实体实例  n/m：多个实例</text>
+  <text class="t t-db" x="990" y="211" style="font-size:12px">参与训练：已标注抓包会话合并入重训</text>
+  <text class="t t-db" x="990" y="234" style="font-size:12px">逻辑关联字段：username、user_id</text>
+  <text class="t" x="600" y="40" style="font-size:20px;font-weight:bold">系统 E-R 概念图（四实体）</text>
+  <text class="t t-db" x="600" y="62" style="font-size:13px">数据库：traffic_platform（MongoDB）</text>
+</svg>

@@ -10,10 +10,10 @@ export function apiUrl(path) {
 
 /** 解析 JSON；若响应体是 HTML（如 404 页面），抛出可读错误 */
 export async function readJsonResponse(res) {
-  const text = await res.text()
-  const trimmed = text.trim()
+  const text = await res.text()/** 异步请求*/
+  const trimmed = text.trim()/** 去除相应文本的首尾空白字符*/
   if (!trimmed) return {}
-  if (trimmed.startsWith('<')) {
+  if (trimmed.startsWith('<')) {/** 说明反应html代码，而不是json代码*/
     throw new Error(
       `接口返回了网页而不是 JSON（HTTP ${res.status}）。请确认：1）Flask 已启动；2）已配置 Vite 代理 /api；3）若仍异常，可尝试将后端改为其他端口并在 .env 设置 VITE_API_BASE。`
     )
@@ -23,4 +23,13 @@ export async function readJsonResponse(res) {
   } catch {
     throw new Error(`接口返回内容无法解析为 JSON（HTTP ${res.status}）`)
   }
+}
+
+/** 将后端 UTC 时间（含无 Z 后缀的 ISO）格式化为本地可读时间 */
+export function formatUtcTime(iso) {
+  if (!iso) return '—'
+  const normalized = /[Zz]$|[+-]\d{2}:\d{2}$/.test(iso) ? iso : `${iso}Z`
+  const d = new Date(normalized)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleString('zh-CN', { hour12: false })
 }

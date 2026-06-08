@@ -1,17 +1,20 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect } from 'react' /**useState-状态管理  useEffect-副作用处理*/
 import { useNavigate, Link, useLocation } from 'react-router-dom'
 import { apiUrl, readJsonResponse } from '../api'
 import './Header.css'
 
 export default function Header() {
   const [user, setUser] = useState(null)
-  const navigate = useNavigate()
+  const navigate = useNavigate()/**直接跳转到页面*/
   const location = useLocation()
+  /** location.pathname  // 当前路径，如 '/detection'
+  location.search    // 查询参数，如 '?id=1'
+  location.hash       // 锚点，如 '#section'*/
 
-  useEffect(() => {
-    fetch(apiUrl('/api/check-session'), { credentials: 'include' })
+  useEffect(() => {/**副作用处理*/
+    fetch(apiUrl('/api/check-session'), { credentials: 'include' })/**异步请求，向后端发出请求，对应message.py*/
       .then(res => readJsonResponse(res))
-      .then(data => {
+      .then(data => { /**请求返回的数据data*/
         if (data.logged_in) {
           setUser({ username: data.username, role: data.role })
         }

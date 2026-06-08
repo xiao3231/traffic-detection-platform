@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Icon from '../components/Icon'
-import { apiUrl, readJsonResponse } from '../api'
+import { apiUrl, formatUtcTime, readJsonResponse } from '../api'
 
 function TreeNodes({ nodes, depth = 0 }) {
   if (!nodes?.length) return null
@@ -30,13 +30,358 @@ function ChecksumBox({ checksums }) {
   )
 }
 
+const PROTOCOL_TAG_OPTIONS = ['TCP', 'UDP', 'ICMP', 'ARP', 'HTTP', 'DNS', 'TLS']
+
+function inferTagsFromBpf(bpf) {
+  const expr = (bpf || '').toLowerCase()
+  if (!expr) return []
+  const found = []
+  const pairs = [
+    ['tcp port 80', 'HTTP'],
+    ['udp', 'UDP'],
+    ['tcp', 'TCP'],
+    ['icmp', 'ICMP'],
+    ['arp', 'ARP'],
+    ['dns', 'DNS'],
+    ['tls', 'TLS'],
+  ]
+  pairs.forEach(([token, tag]) => {
+    if (expr.includes(token) && !found.includes(tag)) found.push(tag)
+  })
+  return found
+}
+
+const BPF_SELECT_OPTIONS = [
+  { value: '', label: '请选择协议', expr: '' },
+  { value: 'tcp', label: 'TCP', expr: 'tcp' },
+  { value: 'udp', label: 'UDP', expr: 'udp' },
+  { value: 'icmp', label: 'ICMP', expr: 'icmp' },
+  { value: 'arp', label: 'ARP', expr: 'arp' },
+  { value: 'http', label: 'HTTP (tcp port 80)', expr: 'tcp port 80' },
+  { value: 'tcp_udp', label: 'TCP + UDP', expr: 'tcp or udp' },
+  { value: 'custom', label: '自定义表达式', expr: null },
+]
+
+function isOfflineCaptureSession(session) {
+  return Boolean(session?.source_file)
+}
+
+function runMergeModeInfo(run) {
+  const extraPcaps = (run?.extra_good_pcaps ?? 0) + (run?.extra_bad_pcaps ?? 0)
+  const mergedCount =
+    run?.merged_sessions?.length ?? run?.merged_session_ids?.length ?? extraPcaps ?? 0
+
+  if (run?.include_labeled_captures === false || extraPcaps === 0) {
+    return {
+      text: '仅本地',
+      variant: 'local',
+      title: '未合并训练池 pcap，仅使用 goodx/badx',
+    }
+  }
+
+  return {
+    text: mergedCount > 0 ? `已选·${mergedCount}` : '已选 pcap',
+    variant: 'pool',
+    title: `本次训练合并训练池中 ${mergedCount} 个标注 pcap`,
+  }
+}
+
+function TrainMetricsPanel({ run, title = '训练评估' }) {
+  if (!run) return null
+  const algo = run.model_algorithm_label || run.model_algorithm || '随机森林'
+  const timeLabel = run.created_at ? formatUtcTime(run.created_at) : null
+
+  return (
+    <section className="pa-panel metrics-panel">
+      <h2>
+        <Icon name="chart" size={20} /> {title}
+      </h2>
+      <p className="muted small pa-metrics-subtitle">
+        {algo}
+        {timeLabel ? ` · ${timeLabel}` : ''}
+        {run.is_active ? ' · 当前线上模型' : ''}
+      </p>
+      <RunSampleDetail run={run} />
+      <div className="pa-metrics-grid">
+        {run.sample_total != null && (
+          <>
+            <div className="pa-metric-card">
+              <span className="label">训练样本（流级）</span>
+              <strong>{run.sample_total}</strong>
+            </div>
+            <div className="pa-metric-card">
+              <span className="label">拟合 / 测试划分</span>
+              <strong>
+                {run.train_set_size ?? '—'} / {run.test_set_size ?? '—'}
+              </strong>
+            </div>
+          </>
+        )}
+        <div className="pa-metric-card">
+          <span className="label">测试准确率</span>
+          <strong>{run.test_score != null ? `${(run.test_score * 100).toFixed(2)}%` : '—'}</strong>
+        </div>
+        <div className="pa-metric-card">
+          <span className="label">恶意 Recall</span>
+          <strong>
+            {run.malicious_recall != null ? `${(run.malicious_recall * 100).toFixed(2)}%` : '—'}
+          </strong>
+        </div>
+        <div className="pa-metric-card">
+          <span className="label">恶意 F1</span>
+          <strong>{run.malicious_f1 != null ? `${(run.malicious_f1 * 100).toFixed(2)}%` : '—'}</strong>
+        </div>
+      </div>
+      <p className="muted small pa-metrics-rf-hint">
+        上方为<strong>随机森林</strong>在<strong>测试集</strong>上的指标，与下表「随机森林」行的测试准确率 / Recall / F1 一致；
+        下表多出的「训练准确率」是拟合集表现，通常高于测试集。
+      </p>
+
+      <details className="pa-baseline-details">
+        <summary>论文用：算法对比（可选，点击展开）</summary>
+        <div className="pa-sub-block pa-baseline-block">
+        <p className="muted small pa-baseline-policy">
+          对比使用<strong>该次重训当时</strong>的样本（goodx/badx + 当时纳入的标注 pcap），不是当前训练池。
+          线上固定为<strong>随机森林</strong>，其它算法仅作论文参考，不自动替换。
+        </p>
+        {run.baseline_comparison?.models?.length > 0 ? (
+          <>
+            {run.baseline_comparison.training_data_note && (
+              <p className="muted small">
+                对比样本：<strong>{run.baseline_comparison.training_data_note}</strong>
+              </p>
+            )}
+            <p className="muted small">{run.baseline_comparison.description}</p>
+            <table className="pa-table pa-baseline-table">
+              <thead>
+                <tr>
+                  <th>算法</th>
+                  <th>训练准确率</th>
+                  <th>测试准确率</th>
+                  <th>恶意 Recall</th>
+                  <th>恶意 F1</th>
+                </tr>
+              </thead>
+              <tbody>
+                {run.baseline_comparison.models.map((m) => (
+                  <tr key={m.name} className={m.is_primary ? 'pa-baseline-primary' : undefined}>
+                    <td>
+                      <span>{m.label || m.name}</span>
+                      {m.is_primary && <span className="pa-model-badge">线上</span>}
+                    </td>
+                    <td>{m.train_score != null ? `${(m.train_score * 100).toFixed(2)}%` : '—'}</td>
+                    <td>{m.test_score != null ? `${(m.test_score * 100).toFixed(2)}%` : '—'}</td>
+                    <td>
+                      {m.malicious_recall != null ? `${(m.malicious_recall * 100).toFixed(2)}%` : '—'}
+                    </td>
+                    <td>{m.malicious_f1 != null ? `${(m.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        ) : (
+          <p className="muted small">
+            正在计算或未生成算法对比。可忽略；上方指标卡片即为本次线上模型结果。
+          </p>
+        )}
+        </div>
+      </details>
+
+      {run.confusion_matrix?.matrix && (
+        <div className="pa-cm-block">
+          <h3>混淆矩阵（测试集 · 随机森林）</h3>
+          <p className="muted small">{run.confusion_matrix.description}</p>
+          <table className="pa-table pa-cm-table">
+            <thead>
+              <tr>
+                <th />
+                <th>预测恶意</th>
+                <th>预测安全</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <th>真实恶意</th>
+                <td>{run.confusion_matrix.matrix[0]?.[0]}</td>
+                <td>{run.confusion_matrix.matrix[0]?.[1]}</td>
+              </tr>
+              <tr>
+                <th>真实安全</th>
+                <td>{run.confusion_matrix.matrix[1]?.[0]}</td>
+                <td>{run.confusion_matrix.matrix[1]?.[1]}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {run.feature_importance?.length > 0 && (
+        <div className="pa-sub-block">
+          <h3>特征重要性（{algo} Top）</h3>
+          <ul className="pa-importance-list">
+            {run.feature_importance.map((f) => (
+              <li key={f.name}>
+                <span>{f.name}</span>
+                <div className="pa-imp-bar">
+                  <div
+                    className="pa-imp-fill"
+                    style={{
+                      width: `${Math.min(100, (f.importance / (run.feature_importance[0]?.importance || 1)) * 100)}%`,
+                    }}
+                  />
+                </div>
+                <span className="num">{(f.importance * 100).toFixed(2)}%</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function RunSampleDetail({ run }) {
+  const hasSource =
+    run?.local_normal_flows != null ||
+    run?.local_malicious_flows != null ||
+    (run?.extra_normal_flows ?? 0) > 0 ||
+    (run?.extra_malicious_flows ?? 0) > 0
+
+  if (run?.sample_total == null && !hasSource) {
+    return (
+      <p className="muted small pa-run-sample-detail">样本来源未记录（请重新训练后可在详情中查看）</p>
+    )
+  }
+
+  const localNormal = run.local_normal_flows ?? (hasSource ? 0 : run.sample_normal)
+  const localMalicious = run.local_malicious_flows ?? (hasSource ? 0 : run.sample_malicious)
+  const extraNormalPcaps = run.extra_good_pcaps ?? 0
+  const extraMaliciousPcaps = run.extra_bad_pcaps ?? 0
+  const extraNormalFlows = run.extra_normal_flows ?? 0
+  const extraMaliciousFlows = run.extra_malicious_flows ?? 0
+  const extraNormalPackets = run.extra_normal_packets ?? 0
+  const extraMaliciousPackets = run.extra_malicious_packets ?? 0
+  const extraPcapTotal = extraNormalPcaps + extraMaliciousPcaps
+  const mergedSessions = run.merged_sessions || []
+  const showMergedBlock = mergedSessions.length > 0 || extraPcapTotal > 0
+
+  return (
+    <div className="pa-run-sample-detail">
+      <h3 className="pa-sample-source-title">训练样本来源</h3>
+      <table className="pa-table pa-sample-source-table">
+        <thead>
+          <tr>
+            <th>来源</th>
+            <th>pcap 份数</th>
+            <th>包数</th>
+            <th>正常流</th>
+            <th>恶意流</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th>本地默认集（goodx/badx）</th>
+            <td>—</td>
+            <td>—</td>
+            <td>{localNormal ?? '—'}</td>
+            <td>{localMalicious ?? '—'}</td>
+          </tr>
+          <tr>
+            <th>外来标注 pcap</th>
+            <td>
+              正常 {extraNormalPcaps} / 恶意 {extraMaliciousPcaps}
+            </td>
+            <td>
+              正常 {extraNormalPackets} / 恶意 {extraMaliciousPackets}
+            </td>
+            <td>{extraNormalFlows}</td>
+            <td>{extraMaliciousFlows}</td>
+          </tr>
+          <tr className="pa-sample-total-row">
+            <th>合计（流级）</th>
+            <td colSpan={2} className="muted">
+              共 {run.sample_total ?? '—'} 条流
+            </td>
+            <td>{run.sample_normal ?? '—'}</td>
+            <td>{run.sample_malicious ?? '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+      {showMergedBlock && (
+        <div className="pa-merged-sessions-block">
+          <h3 className="pa-sample-source-title">本次合并的标注会话</h3>
+          {mergedSessions.length > 0 ? (
+            <table className="pa-table pa-merged-sessions-table">
+              <thead>
+                <tr>
+                  <th>文件</th>
+                  <th>模式</th>
+                  <th>标注</th>
+                  <th>协议标签</th>
+                  <th>包数</th>
+                  <th>流数</th>
+                </tr>
+              </thead>
+              <tbody>
+                {mergedSessions.map((s) => (
+                  <tr key={s.session_id}>
+                    <td className="fname-cell" title={s.filename}>
+                      {s.filename}
+                    </td>
+                    <td>{s.mode_label || '—'}</td>
+                    <td>
+                      {!s.annotation && <span className="pa-tag muted">—</span>}
+                      {s.annotation === 'normal' && <span className="pa-tag good">正常样本</span>}
+                      {s.annotation === 'malicious' && <span className="pa-tag bad">恶意样本</span>}
+                    </td>
+                    <td className="pa-tag-cell">
+                      {s.protocol_tags?.length ? (
+                        <div className="pa-protocol-tags readonly">
+                          {s.protocol_tags.map((tag) => (
+                            <span key={tag} className="pa-tag-btn on readonly">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="muted small">—</span>
+                      )}
+                    </td>
+                    <td>{s.packet_count ?? '—'}</td>
+                    <td>{s.flow_count ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="muted small pa-merged-sessions-empty">
+              本条记录未保存合并明细（多为旧版训练产生）。请<strong>重启后端</strong>后重新点一次「开始重训」，即可在此看到文件名与协议标签。
+            </p>
+          )}
+        </div>
+      )}
+      <p className="muted small pa-sample-split-line">
+        按 7:3 划分后，<strong>拟合 {run.train_set_size ?? '—'} 条</strong>
+        （正常 {run.train_set_normal ?? '—'} / 恶意 {run.train_set_malicious ?? '—'}），
+        <strong>测试 {run.test_set_size ?? '—'} 条</strong>
+        （正常 {run.test_set_normal ?? '—'} / 恶意 {run.test_set_malicious ?? '—'}）。
+      </p>
+    </div>
+  )
+}
+
 export default function ProtocolAnalysis() {
   const navigate = useNavigate()
   const fileRef = useRef(null)
   const listRef = useRef(null)
+  const metricsPanelRef = useRef(null)
 
   const [ready, setReady] = useState(false)
   const [bpf, setBpf] = useState('')
+  const [bpfSelect, setBpfSelect] = useState('')
+  const [appliedBpf, setAppliedBpf] = useState('')
+  const [hasOfflineSource, setHasOfflineSource] = useState(false)
   const [running, setRunning] = useState(false)
   const [paused, setPaused] = useState(false)
   const [packetCount, setPacketCount] = useState(0)
@@ -47,16 +392,21 @@ export default function ProtocolAnalysis() {
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [featurePreview, setFeaturePreview] = useState(null)
+  const [previewProbThreshold, setPreviewProbThreshold] = useState(0.8)
+  const [previewRatioThreshold, setPreviewRatioThreshold] = useState(0.2)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewSessionId, setPreviewSessionId] = useState('')
   const [modelRuns, setModelRuns] = useState([])
+  const [activeModel, setActiveModel] = useState(null)
   const [trainLoading, setTrainLoading] = useState(false)
   const [restoreRunId, setRestoreRunId] = useState(null)
   const [includeLabeledInTrain, setIncludeLabeledInTrain] = useState(true)
+  const [trainingPoolSummary, setTrainingPoolSummary] = useState(null)
   const [sniffError, setSniffError] = useState('')
   const [featureSchema, setFeatureSchema] = useState(null)
-  const [lastTrainMetrics, setLastTrainMetrics] = useState(null)
-  const [expandedRunId, setExpandedRunId] = useState(null)
+  const [viewingRunId, setViewingRunId] = useState(null)
+  const [viewingRunDetail, setViewingRunDetail] = useState(null)
+  const [viewingRunLoading, setViewingRunLoading] = useState(false)
 
   const loadSessions = useCallback(async () => {
     const res = await fetch(apiUrl('/api/capture/sessions'), { credentials: 'include' })
@@ -64,10 +414,19 @@ export default function ProtocolAnalysis() {
     if (res.ok) setSessions(data.items || [])
   }, [])
 
+  const loadTrainingPoolSummary = useCallback(async () => {
+    const res = await fetch(apiUrl('/api/train/labeled-summary'), { credentials: 'include' })
+    const data = await readJsonResponse(res)
+    if (res.ok) setTrainingPoolSummary(data)
+  }, [])
+
   const loadModelRuns = useCallback(async () => {
     const res = await fetch(apiUrl('/api/train/runs'), { credentials: 'include' })
     const data = await readJsonResponse(res)
-    if (res.ok) setModelRuns(data.items || [])
+    if (res.ok) {
+      setModelRuns(data.items || [])
+      setActiveModel(data.active_model || null)
+    }
   }, [])
 
   const loadFeatureSchema = useCallback(async () => {
@@ -83,10 +442,47 @@ export default function ProtocolAnalysis() {
       setRunning(!!data.running)
       setPaused(!!data.paused)
       setPacketCount(data.packet_count || 0)
+      setAppliedBpf(data.bpf_filter || '')
+      setHasOfflineSource(!!data.has_offline_source)
       if (data.last_error) setSniffError(data.last_error)
     }
     return data
   }, [])
+
+  const syncAllPackets = useCallback(async () => {
+    const res = await fetch(apiUrl('/api/capture/packets'), { credentials: 'include' })
+    const data = await readJsonResponse(res)
+    if (!res.ok) return data
+    setPackets(data.packets || [])
+    if (data.packet_count != null) setPacketCount(data.packet_count)
+    if (data.status) {
+      setRunning(!!data.status.running)
+      setPaused(!!data.status.paused)
+      setAppliedBpf(data.status.bpf_filter || '')
+      setHasOfflineSource(!!data.status.has_offline_source)
+      if (data.status.last_error) setSniffError(data.status.last_error)
+    }
+    return data
+  }, [])
+
+  const waitCaptureDone = useCallback(async () => {
+    for (let i = 0; i < 400; i += 1) {
+      const res = await fetch(apiUrl('/api/capture/pending'), { credentials: 'include' })
+      const data = await readJsonResponse(res)
+      if (data.status) {
+        setRunning(!!data.status.running)
+        setPaused(!!data.status.paused)
+        setPacketCount(data.status.packet_count ?? 0)
+        if (data.status.last_error) setSniffError(data.status.last_error)
+      }
+      if (data.packets?.length) {
+        setPackets((prev) => [...prev, ...data.packets])
+      }
+      if (!data.status?.running) break
+      await new Promise((r) => setTimeout(r, 150))
+    }
+    return syncAllPackets()
+  }, [syncAllPackets])
 
   const loadDetail = useCallback(async (index) => {
     const res = await fetch(apiUrl(`/api/capture/packet/${index}`), { credentials: 'include' })
@@ -129,7 +525,7 @@ export default function ProtocolAnalysis() {
     return () => clearInterval(id)
   }, [running, paused])
 
-  /** 抓包线程结束时可能仍有一批包在 pending，再拉一次避免列表缺尾包 */
+  /** 抓包/离线解析结束时同步完整列表（离线很快完成时轮询可能来不及） */
   useEffect(() => {
     if (running) return undefined
     let cancelled = false
@@ -137,9 +533,14 @@ export default function ProtocolAnalysis() {
       try {
         const res = await fetch(apiUrl('/api/capture/pending'), { credentials: 'include' })
         const data = await readJsonResponse(res)
-        if (cancelled || !data.packets?.length) return
-        setPackets((prev) => [...prev, ...data.packets])
+        if (cancelled) return
+        if (data.packets?.length) {
+          setPackets((prev) => [...prev, ...data.packets])
+        }
         if (data.status?.packet_count != null) setPacketCount(data.status.packet_count)
+        const full = await syncAllPackets()
+        if (cancelled || !full?.packets?.length) return
+        setPackets(full.packets)
       } catch {
         /* ignore */
       }
@@ -148,7 +549,7 @@ export default function ProtocolAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [running])
+  }, [running, syncAllPackets])
 
   useEffect(() => {
     let cancelled = false
@@ -167,6 +568,7 @@ export default function ProtocolAnalysis() {
         const st = await refreshStatus()
         await loadSessions()
         await loadModelRuns()
+        await loadTrainingPoolSummary()
         await loadFeatureSchema()
         if (!cancelled && st?.running) {
           /* 轮询由 useEffect([running,paused]) 自动启动 */
@@ -181,7 +583,7 @@ export default function ProtocolAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [navigate, refreshStatus, loadSessions, loadModelRuns, loadFeatureSchema])
+  }, [navigate, refreshStatus, loadSessions, loadModelRuns, loadTrainingPoolSummary, loadFeatureSchema])
 
   const postAction = async (path, body) => {
     setBusy(true)
@@ -220,7 +622,13 @@ export default function ProtocolAnalysis() {
     const data = await postAction('/api/capture/stop')
     setRunning(false)
     setPaused(false)
-    if (data.session) await loadSessions()
+    if (data.session) {
+      await loadSessions()
+      await loadTrainingPoolSummary()
+      alert(data.message || '会话已保存')
+    } else if (data.message) {
+      setError(data.message)
+    }
     await refreshStatus()
   }
 
@@ -231,14 +639,103 @@ export default function ProtocolAnalysis() {
     setDetail(null)
     setPacketCount(0)
     setSniffError('')
+    setBpf('')
+    setBpfSelect('')
+    setAppliedBpf('')
+    setHasOfflineSource(false)
     await refreshStatus()
+  }
+
+  const handleBpfSelectChange = (value) => {
+    setBpfSelect(value)
+    const opt = BPF_SELECT_OPTIONS.find((o) => o.value === value)
+    if (value === 'custom') {
+      setBpf('')
+      return
+    }
+    setBpf(opt?.expr || '')
+  }
+
+  const handleBpfApply = async () => {
+    const expr = bpf.trim()
+    if (!expr) {
+      setError('请在下拉框选择协议，或选「自定义表达式」后填写，例如 tcp port 443')
+      return
+    }
+    if (!hasOfflineSource) {
+      setError('请先「打开 pcap」加载文件后再点「查询」')
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setSniffError('')
+    try {
+      const res = await fetch(apiUrl('/api/capture/apply-bpf'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bpf_filter: expr }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '过滤失败')
+      setPackets([])
+      setSelectedIndex(null)
+      setDetail(null)
+      setRunning(true)
+      const done = await waitCaptureDone()
+      setAppliedBpf(expr)
+      if ((done?.packet_count ?? 0) === 0 && !done?.status?.last_error) {
+        setError('没有匹配的数据包，请检查 BPF 表达式是否正确')
+      }
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleBpfCancel = async () => {
+    if (!hasOfflineSource) {
+      setBpf('')
+      setBpfSelect('')
+      setAppliedBpf('')
+      setError(null)
+      return
+    }
+    setBusy(true)
+    setError(null)
+    setSniffError('')
+    try {
+      const res = await fetch(apiUrl('/api/capture/cancel-bpf'), {
+        method: 'POST',
+        credentials: 'include',
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '取消过滤失败')
+      setBpf('')
+      setBpfSelect('')
+      setAppliedBpf('')
+      setPackets([])
+      setSelectedIndex(null)
+      setDetail(null)
+      setRunning(true)
+      await waitCaptureDone()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
   }
 
   const handleFeaturePreview = async (useSession) => {
     setPreviewLoading(true)
     setError(null)
     try {
-      const body = useSession && previewSessionId ? { session_id: previewSessionId } : {}
+      const body = {
+        prob_threshold: previewProbThreshold,
+        ratio_threshold: previewRatioThreshold,
+        ...(useSession && previewSessionId ? { session_id: previewSessionId } : {}),
+      }
       const res = await fetch(apiUrl('/api/capture/features-preview'), {
         method: 'POST',
         credentials: 'include',
@@ -256,19 +753,121 @@ export default function ProtocolAnalysis() {
     }
   }
 
-  const handleAnnotate = async (sessionId, annotation) => {
+  const handleAnnotate = async (sessionId, annotation, protocolTags) => {
+    setError(null)
+    try {
+      const session = sessions.find((s) => s.id === sessionId)
+      const tags =
+        protocolTags ??
+        (session?.protocol_tags?.length ? session.protocol_tags : inferTagsFromBpf(session?.bpf_filter))
+      const payload =
+        annotation === '' || annotation === null || annotation === undefined
+          ? { annotation: null }
+          : { annotation, protocol_tags: tags }
+      const res = await fetch(apiUrl(`/api/capture/sessions/${sessionId}/annotate`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '标注失败')
+      await loadSessions()
+      await loadTrainingPoolSummary()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const handleToggleProtocolTag = async (sessionId, tag) => {
+    const session = sessions.find((s) => s.id === sessionId)
+    if (!session) return
+    const current = session.protocol_tags?.length
+      ? [...session.protocol_tags]
+      : inferTagsFromBpf(session.bpf_filter)
+    const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag]
+    setError(null)
     try {
       const res = await fetch(apiUrl(`/api/capture/sessions/${sessionId}/annotate`), {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ annotation }),
+        body: JSON.stringify({ protocol_tags: next }),
       })
       const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || '标注失败')
+      if (!res.ok) throw new Error(data.error || '更新协议标签失败')
       await loadSessions()
     } catch (e) {
       setError(e.message)
+    }
+  }
+
+  const handleToggleTrainingPool = async (sessionId, selected) => {
+    setError(null)
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, training_selected: selected } : s))
+    )
+    try {
+      const res = await fetch(apiUrl(`/api/capture/sessions/${sessionId}/training-pool`), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ selected }),
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '操作失败')
+      await loadSessions()
+      await loadTrainingPoolSummary()
+    } catch (e) {
+      setError(e.message)
+      await loadSessions()
+    }
+  }
+
+  const handleDeleteSession = async (sessionId, filename) => {
+    const label = filename || sessionId
+    if (!window.confirm(`确定删除会话「${label}」？\n将同时删除 MongoDB 记录与 pcap 文件。`)) return
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/capture/sessions/${sessionId}`), {
+        method: 'DELETE',
+        credentials: 'include',
+      })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '删除失败')
+      if (previewSessionId === sessionId) setPreviewSessionId('')
+      await loadSessions()
+      await loadTrainingPoolSummary()
+    } catch (e) {
+      setError(e.message)
+    }
+  }
+
+  const handleViewRunMetrics = async (runId) => {
+    if (viewingRunId === runId) {
+      setViewingRunId(null)
+      setViewingRunDetail(null)
+      return
+    }
+    setViewingRunId(runId)
+    setViewingRunDetail(null)
+    setViewingRunLoading(true)
+    setError(null)
+    try {
+      const res = await fetch(apiUrl(`/api/train/runs/${runId}`), { credentials: 'include' })
+      const data = await readJsonResponse(res)
+      if (!res.ok) throw new Error(data.error || '加载训练评估失败')
+      setViewingRunDetail(data.run)
+      setModelRuns((prev) => prev.map((r) => (r.id === runId ? { ...r, ...data.run } : r)))
+      requestAnimationFrame(() => {
+        metricsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
+    } catch (e) {
+      setError(e.message)
+      setViewingRunId(null)
+      setViewingRunDetail(null)
+    } finally {
+      setViewingRunLoading(false)
     }
   }
 
@@ -280,19 +879,28 @@ export default function ProtocolAnalysis() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ include_labeled_captures: includeLabeledInTrain }),
+        body: JSON.stringify({
+          include_labeled_captures: includeLabeledInTrain,
+        }),
       })
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || '训练失败')
       await loadModelRuns()
-      if (data.metrics) setLastTrainMetrics(data.metrics)
+      await loadSessions()
+      await loadTrainingPoolSummary()
+      if (data.run_id) {
+        await handleViewRunMetrics(data.run_id)
+      }
       const m = data.metrics || {}
       alert(
-        `训练完成（${m.feature_count ?? '—'} 维特征）\n` +
-          `测试准确率: ${m.test_score != null ? (m.test_score * 100).toFixed(2) : '—'}%\n` +
+        `训练完成（随机森林，${m.feature_count ?? '—'} 维特征）\n` +
+          `训练样本: ${m.sample_total != null ? `${m.sample_total} 条（正常 ${m.sample_normal} / 恶意 ${m.sample_malicious}）` : '—'}\n` +
+          `拟合/测试: ${m.train_set_size != null ? `${m.train_set_size} / ${m.test_set_size} 条` : '—'}\n` +
+          `\n测试准确率: ${m.test_score != null ? (m.test_score * 100).toFixed(2) : '—'}%\n` +
           `恶意类 Recall: ${m.malicious_recall != null ? (m.malicious_recall * 100).toFixed(2) : '—'}%  F1: ${m.malicious_f1 != null ? (m.malicious_f1 * 100).toFixed(2) : '—'}%\n` +
+          `训练池 pcap: ${data.merged_session_count ?? 0} 个\n` +
           `合并正常 pcap: ${data.merged_good_pcaps}，恶意: ${data.merged_bad_pcaps}\n` +
-          '详见下方「本次训练评估」与训练记录。'
+          '详见下方训练记录中的「评估」面板。'
       )
     } catch (e) {
       setError(e.message)
@@ -300,6 +908,10 @@ export default function ProtocolAnalysis() {
       setTrainLoading(false)
     }
   }
+
+  const viewingRun = viewingRunId
+    ? (viewingRunDetail || modelRuns.find((r) => r.id === viewingRunId))
+    : null
 
   const handleRestoreModelRun = async (runId) => {
     if (
@@ -337,7 +949,6 @@ export default function ProtocolAnalysis() {
     try {
       const form = new FormData()
       form.append('file', file)
-      form.append('bpf_filter', bpf)
       const res = await fetch(apiUrl('/api/capture/open-pcap'), {
         method: 'POST',
         credentials: 'include',
@@ -349,7 +960,13 @@ export default function ProtocolAnalysis() {
       setSelectedIndex(null)
       setDetail(null)
       setSniffError('')
-      await refreshStatus()
+      setRunning(true)
+      const done = await waitCaptureDone()
+      setAppliedBpf('')
+      setHasOfflineSource(!!done?.status?.has_offline_source)
+      if ((done?.packet_count ?? 0) === 0 && !done?.status?.last_error) {
+        setError('未解析到数据包，请确认文件为有效 .pcap 且非空')
+      }
     } catch (err) {
       setError(err.message)
     } finally {
@@ -369,6 +986,8 @@ export default function ProtocolAnalysis() {
       </div>
     )
   }
+
+  const canSaveCapture = running || (hasOfflineSource && packetCount > 0)
 
   return (
     <div className="pa-page">
@@ -393,8 +1012,14 @@ export default function ProtocolAnalysis() {
           <button type="button" className="pa-btn" disabled={!running || busy} onClick={handlePauseToggle}>
             {paused ? '继续' : '暂停'}
           </button>
-          <button type="button" className="pa-btn" disabled={!running || busy} onClick={handleStop}>
-            停止并保存
+          <button
+            type="button"
+            className="pa-btn"
+            disabled={!canSaveCapture || busy}
+            onClick={handleStop}
+            title={hasOfflineSource && !running ? '将当前离线 pcap 写入已保存会话' : '停止抓包并保存会话'}
+          >
+            {running ? '停止并保存' : '保存会话'}
           </button>
           <button type="button" className="pa-btn" disabled={busy} onClick={handleClear}>
             清空
@@ -407,17 +1032,53 @@ export default function ProtocolAnalysis() {
           >
             打开 pcap
           </button>
-          <input ref={fileRef} type="file" accept=".pcap" hidden onChange={handleOpenPcap} />
-          <label className="bpf-label">
-            BPF 过滤器
-            <input
-              className="bpf-input"
-              value={bpf}
-              onChange={(ev) => setBpf(ev.target.value)}
-              placeholder="例如 tcp port 80"
-              disabled={running}
-            />
-          </label>
+          <input ref={fileRef} type="file" accept=".pcap,.pcapng" hidden onChange={handleOpenPcap} />
+          <div className="bpf-wrap">
+            <span className="bpf-label-text">BPF 过滤器</span>
+            <select
+              className="bpf-select"
+              value={bpfSelect}
+              onChange={(ev) => handleBpfSelectChange(ev.target.value)}
+              disabled={running || busy}
+              aria-label="协议过滤"
+            >
+              {BPF_SELECT_OPTIONS.map((opt) => (
+                <option key={opt.value || 'none'} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+            {bpfSelect === 'custom' ? (
+              <input
+                className="bpf-input"
+                value={bpf}
+                onChange={(ev) => setBpf(ev.target.value)}
+                onKeyDown={(ev) => {
+                  if (ev.key === 'Enter' && !running && !busy && hasOfflineSource) handleBpfApply()
+                }}
+                placeholder="例如 tcp port 443"
+                disabled={running || busy}
+              />
+            ) : null}
+            <button
+              type="button"
+              className="pa-btn pa-btn-sm bpf-btn"
+              disabled={running || busy || !hasOfflineSource}
+              onClick={handleBpfApply}
+              title={hasOfflineSource ? '对当前 pcap 应用 BPF' : '请先打开 pcap 文件'}
+            >
+              查询
+            </button>
+            <button
+              type="button"
+              className="pa-btn pa-btn-sm bpf-btn"
+              disabled={running || busy || !hasOfflineSource}
+              onClick={handleBpfCancel}
+              title="清除过滤并重新加载全部数据包"
+            >
+              取消
+            </button>
+          </div>
         </div>
 
         <div className="pa-stats">
@@ -428,6 +1089,16 @@ export default function ProtocolAnalysis() {
           <span>
             <Icon name="info" size={18} /> 状态：{running ? (paused ? '已暂停' : '抓包中') : '空闲'}
           </span>
+          {appliedBpf ? (
+            <span>
+              <Icon name="scan" size={18} /> 已应用 BPF：<code className="bpf-applied">{appliedBpf}</code>
+            </span>
+          ) : null}
+          {hasOfflineSource && !appliedBpf ? (
+            <span className="muted-inline">
+              离线 pcap 已加载，可先点「保存会话」写入列表，或选协议后点「查询」过滤
+            </span>
+          ) : null}
         </div>
         {sniffError && (
           <div className="pa-sniff-error">
@@ -514,7 +1185,7 @@ export default function ProtocolAnalysis() {
             <Icon name="folder" size={20} /> 已保存会话（MongoDB）
           </h2>
           {sessions.length === 0 ? (
-            <p className="muted">停止抓包后会自动写入 capture_sessions</p>
+            <p className="muted">实时抓包点「停止」或离线打开 pcap 后点「停止」会写入 capture_sessions</p>
           ) : (
             <div className="table-scroll">
               <table className="pa-table">
@@ -522,27 +1193,77 @@ export default function ProtocolAnalysis() {
                   <tr>
                     <th>模式</th>
                     <th>包数</th>
-                    <th>BPF</th>
                     <th>文件</th>
                     <th>标注</th>
-                    <th>结束时间</th>
+                    <th>训练池</th>
+                    <th>协议</th>
+                    <th>时间</th>
                     <th>操作</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sessions.map((s) => (
+                  {sessions.map((s) => {
+                    const offline = isOfflineCaptureSession(s)
+                    return (
                     <tr key={s.id}>
-                      <td>{s.mode === 'live' ? '实时' : '离线'}</td>
+                      <td>
+                        <span className={`pa-mode-tag${offline ? ' offline' : ' live'}`}>
+                          {offline ? '离线' : '实时'}
+                        </span>
+                      </td>
                       <td>{s.packet_count}</td>
-                      <td>{s.bpf_filter || '—'}</td>
-                      <td className="fname-cell">{s.pcap_filename || '—'}</td>
+                      <td
+                        className="fname-cell"
+                        title={
+                          offline && s.source_file && s.pcap_filename
+                            ? `已保存为 ${s.pcap_filename}`
+                            : undefined
+                        }
+                      >
+                        {offline && s.source_file ? s.source_file : s.pcap_filename || '—'}
+                      </td>
                       <td>
                         {!s.annotation && <span className="pa-tag muted">未标注</span>}
                         {s.annotation === 'normal' && <span className="pa-tag good">正常样本</span>}
                         {s.annotation === 'malicious' && <span className="pa-tag bad">恶意样本</span>}
                       </td>
-                      <td className="muted">
-                        {s.ended_at ? new Date(s.ended_at).toLocaleString('zh-CN') : '—'}
+                      <td>
+                        {!s.annotation ? (
+                          <span className="muted small">—</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`pa-pool-toggle${s.training_selected ? ' on' : ''}`}
+                            onClick={() => handleToggleTrainingPool(s.id, !s.training_selected)}
+                            title="点击切换是否加入训练池"
+                          >
+                            {s.training_selected ? '已入选' : '未入选'}
+                          </button>
+                        )}
+                      </td>
+                      <td className="pa-tag-cell">
+                        <div className="pa-protocol-tags">
+                          {PROTOCOL_TAG_OPTIONS.map((tag) => {
+                            const active = (s.protocol_tags?.length
+                              ? s.protocol_tags
+                              : inferTagsFromBpf(s.bpf_filter)
+                            ).includes(tag)
+                            return (
+                              <button
+                                key={tag}
+                                type="button"
+                                className={`pa-tag-btn${active ? ' on' : ''}`}
+                                onClick={() => handleToggleProtocolTag(s.id, tag)}
+                                title="点击切换协议标签"
+                              >
+                                {tag}
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </td>
+                      <td className="muted" title={offline ? '上传 pcap 时间' : '抓包结束时间'}>
+                        {formatUtcTime(s.ended_at)}
                       </td>
                       <td className="annotate-cell">
                         <button type="button" className="pa-mini" onClick={() => handleAnnotate(s.id, 'normal')}>
@@ -551,12 +1272,44 @@ export default function ProtocolAnalysis() {
                         <button type="button" className="pa-mini" onClick={() => handleAnnotate(s.id, 'malicious')}>
                           标恶意
                         </button>
-                        <button type="button" className="pa-mini" onClick={() => handleAnnotate(s.id, '')}>
-                          清除
+                        {s.annotation ? (
+                          <button
+                            type="button"
+                            className="pa-mini"
+                            onClick={() => handleAnnotate(s.id, null)}
+                          >
+                            清除标注
+                          </button>
+                        ) : null}
+                        {s.annotation && !s.training_selected ? (
+                          <button
+                            type="button"
+                            className="pa-mini"
+                            onClick={() => handleToggleTrainingPool(s.id, true)}
+                          >
+                            加入训练
+                          </button>
+                        ) : null}
+                        {s.annotation && s.training_selected ? (
+                          <button
+                            type="button"
+                            className="pa-mini"
+                            onClick={() => handleToggleTrainingPool(s.id, false)}
+                          >
+                            移出训练
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          className="pa-mini danger"
+                          onClick={() => handleDeleteSession(s.id, s.pcap_filename)}
+                        >
+                          删除
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -568,8 +1321,33 @@ export default function ProtocolAnalysis() {
             <Icon name="chart" size={20} /> 特征与模型预览（与检测模型一致）
           </h2>
           <p className="muted small">
-            按「流」聚合为 12 维特征；可对<strong>当前缓冲</strong>或<strong>已保存会话</strong>的 pcap 计算，并显示当前 model.pkl 对每条流的预测（1=安全，0=危险）。
+            按「流」聚合为 17 维特征；显示每条流的硬分类与<strong>恶意概率 P(0)</strong>。文件级结论采用阈值策略（非任一流恶意即整包危险）：存在
+            P≥概率阈值 的流，或恶意流占比&gt;占比阈值 时判危险。
           </p>
+          <div className="preview-threshold-row">
+            <label className="preview-th-field">
+              <span>恶意概率阈值</span>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={previewProbThreshold}
+                onChange={(e) => setPreviewProbThreshold(Number(e.target.value))}
+              />
+            </label>
+            <label className="preview-th-field">
+              <span>恶意流占比阈值</span>
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.05}
+                value={previewRatioThreshold}
+                onChange={(e) => setPreviewRatioThreshold(Number(e.target.value))}
+              />
+            </label>
+          </div>
           <div className="preview-toolbar">
             <button
               type="button"
@@ -606,6 +1384,16 @@ export default function ProtocolAnalysis() {
                 <Icon name="pieChart" size={18} /> {featurePreview.prediction_summary}
                 {featurePreview.truncated ? '（表格仅显示前 80 条流）' : ''}
               </p>
+              {featurePreview.file_decision && (
+                <p className="muted small preview-file-decision">
+                  文件级判定：
+                  <strong className={featurePreview.file_decision.is_safe ? 'good' : 'bad'}>
+                    {featurePreview.file_decision.label}
+                  </strong>
+                  （P 阈值 {featurePreview.file_decision.prob_threshold}，占比阈值{' '}
+                  {(featurePreview.file_decision.ratio_threshold * 100).toFixed(0)}%）
+                </p>
+              )}
               {featurePreview.flow_count === 0 ? (
                 <p className="muted">未形成流级特征，可多抓一些包或换 pcap。</p>
               ) : (
@@ -615,6 +1403,7 @@ export default function ProtocolAnalysis() {
                       <tr>
                         <th>流#</th>
                         <th>模型预测</th>
+                        <th>P(恶意)</th>
                         <th>len_mean</th>
                         <th>len_std</th>
                         <th>time_mean</th>
@@ -624,12 +1413,15 @@ export default function ProtocolAnalysis() {
                     </thead>
                     <tbody>
                       {featurePreview.flows.map((f) => (
-                        <tr key={f.index}>
+                        <tr key={f.index} className={f.high_risk ? 'high-risk-row' : ''}>
                           <td>{f.index}</td>
                           <td>
                             <span className={f.prediction === 1 ? 'pa-tag good' : 'pa-tag bad'}>
                               {f.prediction_label}
                             </span>
+                          </td>
+                          <td>
+                            {f.malicious_prob != null ? `${(f.malicious_prob * 100).toFixed(1)}%` : '—'}
                           </td>
                           <td>{f.features[0]?.toFixed(2)}</td>
                           <td>{f.features[1]?.toFixed(2)}</td>
@@ -667,11 +1459,10 @@ export default function ProtocolAnalysis() {
 
         <section className="pa-panel train-panel">
           <h2>
-            <Icon name="barChart" size={20} /> 模型重训（合并已标注会话）
+            <Icon name="barChart" size={20} /> 模型重训（训练样本池）
           </h2>
           <p className="muted small">
-            在默认 goodx.csv / badx.csv 上，把你标注为「正常 / 恶意」的会话 pcap 再提取特征合并后重新训练随机森林（class_weight 平衡 + 基线对比），并覆盖保存
-            model.pkl；重训后请重新检测 pcap（特征维度已扩展）。
+            在默认 goodx/badx 基础上，合并<strong>训练样本池</strong>中已勾选的 pcap 后重训。先标注会话，再点「加入训练」；不需要的 pcap 可「移出训练」。
           </p>
           <label className="pa-check">
             <input
@@ -679,8 +1470,79 @@ export default function ProtocolAnalysis() {
               checked={includeLabeledInTrain}
               onChange={(e) => setIncludeLabeledInTrain(e.target.checked)}
             />
-            合并我已标注的抓包会话（取消则仅用原始 CSV 重训）
+            合并训练样本池中的 pcap（取消则仅用 goodx/badx 重训）
           </label>
+          {trainingPoolSummary && (
+            <p className="muted small pa-labeled-summary">
+              训练池：正常 {trainingPoolSummary.pool?.normal ?? 0} / 恶意{' '}
+              {trainingPoolSummary.pool?.malicious ?? 0} 份（共{' '}
+              {trainingPoolSummary.pool?.total ?? 0} 份）；
+              已标注未入选：{trainingPoolSummary.labeled_not_in_pool?.total ?? 0} 份
+            </p>
+          )}
+          {sessions.filter((s) => s.annotation).length > 0 && (
+            <div className="pa-training-pool-table-wrap">
+              <h3 className="pa-training-pool-title">已标注会话 · 训练池管理</h3>
+              <table className="pa-table pa-training-pool-table">
+                <thead>
+                  <tr>
+                    <th>文件</th>
+                    <th>标注</th>
+                    <th>协议</th>
+                    <th>包数</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {sessions
+                    .filter((s) => s.annotation)
+                    .map((s) => {
+                      const offline = isOfflineCaptureSession(s)
+                      const fname = offline && s.source_file ? s.source_file : s.pcap_filename || '—'
+                      const tags = s.protocol_tags?.length
+                        ? s.protocol_tags
+                        : inferTagsFromBpf(s.bpf_filter)
+                      return (
+                        <tr key={`pool-${s.id}`} className={s.training_selected ? 'pa-pool-in' : ''}>
+                          <td className="fname-cell" title={fname}>
+                            {fname}
+                          </td>
+                          <td>
+                            {s.annotation === 'normal' ? (
+                              <span className="pa-tag good">正常</span>
+                            ) : (
+                              <span className="pa-tag bad">恶意</span>
+                            )}
+                          </td>
+                          <td className="muted small">{tags.length ? tags.join(', ') : '—'}</td>
+                          <td>{s.packet_count}</td>
+                          <td>
+                            <button
+                              type="button"
+                              className={`pa-pool-toggle${s.training_selected ? ' on' : ''}`}
+                              onClick={() => handleToggleTrainingPool(s.id, !s.training_selected)}
+                              title="点击切换是否加入训练池"
+                            >
+                              {s.training_selected ? '已入选' : '未入选'}
+                            </button>
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              className="pa-mini"
+                              onClick={() => handleToggleTrainingPool(s.id, !s.training_selected)}
+                            >
+                              {s.training_selected ? '移出训练' : '加入训练'}
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                </tbody>
+              </table>
+            </div>
+          )}
           <button
             type="button"
             className="pa-btn primary"
@@ -691,116 +1553,17 @@ export default function ProtocolAnalysis() {
           </button>
         </section>
 
-        {lastTrainMetrics && (
-          <section className="pa-panel metrics-panel">
-            <h2>
-              <Icon name="chart" size={20} /> 本次训练评估
-            </h2>
-            <div className="pa-metrics-grid">
-              <div className="pa-metric-card">
-                <span className="label">测试准确率</span>
-                <strong>{lastTrainMetrics.test_score != null ? `${(lastTrainMetrics.test_score * 100).toFixed(2)}%` : '—'}</strong>
-              </div>
-              <div className="pa-metric-card">
-                <span className="label">恶意 Recall</span>
-                <strong>{lastTrainMetrics.malicious_recall != null ? `${(lastTrainMetrics.malicious_recall * 100).toFixed(2)}%` : '—'}</strong>
-              </div>
-              <div className="pa-metric-card">
-                <span className="label">恶意 F1</span>
-                <strong>{lastTrainMetrics.malicious_f1 != null ? `${(lastTrainMetrics.malicious_f1 * 100).toFixed(2)}%` : '—'}</strong>
-              </div>
-            </div>
-
-            {lastTrainMetrics.confusion_matrix?.matrix && (
-              <div className="pa-cm-block">
-                <h3>混淆矩阵（测试集）</h3>
-                <p className="muted small">{lastTrainMetrics.confusion_matrix.description}</p>
-                <table className="pa-table pa-cm-table">
-                  <thead>
-                    <tr>
-                      <th />
-                      <th>预测恶意</th>
-                      <th>预测安全</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <th>真实恶意</th>
-                      <td>{lastTrainMetrics.confusion_matrix.matrix[0]?.[0]}</td>
-                      <td>{lastTrainMetrics.confusion_matrix.matrix[0]?.[1]}</td>
-                    </tr>
-                    <tr>
-                      <th>真实安全</th>
-                      <td>{lastTrainMetrics.confusion_matrix.matrix[1]?.[0]}</td>
-                      <td>{lastTrainMetrics.confusion_matrix.matrix[1]?.[1]}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            )}
-
-            {lastTrainMetrics.feature_importance?.length > 0 && (
-              <div className="pa-sub-block">
-                <h3>特征重要性（随机森林 Top）</h3>
-                <ul className="pa-importance-list">
-                  {lastTrainMetrics.feature_importance.map((f) => (
-                    <li key={f.name}>
-                      <span>{f.name}</span>
-                      <div className="pa-imp-bar">
-                        <div
-                          className="pa-imp-fill"
-                          style={{
-                            width: `${Math.min(100, (f.importance / (lastTrainMetrics.feature_importance[0]?.importance || 1)) * 100)}%`,
-                          }}
-                        />
-                      </div>
-                      <span className="num">{(f.importance * 100).toFixed(2)}%</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {lastTrainMetrics.baseline_comparison?.length > 0 && (
-              <div className="pa-sub-block">
-                <h3>基线模型对比（同一测试集）</h3>
-                <div className="table-scroll">
-                  <table className="pa-table">
-                    <thead>
-                      <tr>
-                        <th>算法</th>
-                        <th>测试准确率</th>
-                        <th>恶意 Recall</th>
-                        <th>恶意 F1</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr className="highlight">
-                        <td>RandomForest（主模型）</td>
-                        <td>{lastTrainMetrics.test_score != null ? `${(lastTrainMetrics.test_score * 100).toFixed(2)}%` : '—'}</td>
-                        <td>{lastTrainMetrics.malicious_recall != null ? `${(lastTrainMetrics.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
-                        <td>{lastTrainMetrics.malicious_f1 != null ? `${(lastTrainMetrics.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
-                      </tr>
-                      {lastTrainMetrics.baseline_comparison.map((b) => (
-                        <tr key={b.algorithm}>
-                          <td>{b.algorithm}</td>
-                          <td>{b.test_accuracy != null ? `${(b.test_accuracy * 100).toFixed(2)}%` : '—'}</td>
-                          <td>{b.malicious_recall != null ? `${(b.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
-                          <td>{b.malicious_f1 != null ? `${(b.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-          </section>
-        )}
-
         <section className="pa-panel runs-panel">
           <h2>
             <Icon name="history" size={20} /> 训练记录（MongoDB model_runs）
           </h2>
+          {activeModel?.model_algorithm_label && (
+            <p className="muted small pa-active-model-hint">
+              当前检测使用模型：
+              <strong>{activeModel.model_algorithm_label}</strong>
+              {activeModel.run_id ? '（已关联下方训练记录）' : '（未匹配到历史训练快照）'}
+            </p>
+          )}
           {modelRuns.length === 0 ? (
             <p className="muted">完成一次重训后会显示在此</p>
           ) : (
@@ -809,6 +1572,8 @@ export default function ProtocolAnalysis() {
                 <thead>
                   <tr>
                     <th>时间</th>
+                    <th>模型</th>
+                    <th>合并</th>
                     <th>测试准确率</th>
                     <th>恶意 Recall</th>
                     <th>恶意 F1</th>
@@ -818,9 +1583,35 @@ export default function ProtocolAnalysis() {
                 <tbody>
                   {modelRuns.map((r) => (
                     <Fragment key={r.id}>
-                      <tr>
+                      <tr
+                        className={[
+                          r.is_active ? 'pa-run-active' : '',
+                          viewingRunId === r.id ? 'pa-run-viewing' : '',
+                        ]
+                          .filter(Boolean)
+                          .join(' ') || undefined}
+                      >
                         <td className="muted">
-                          {r.created_at ? new Date(r.created_at).toLocaleString('zh-CN') : '—'}
+                          {formatUtcTime(r.created_at)}
+                        </td>
+                        <td>
+                          <div className="pa-model-cell">
+                            <span>{r.model_algorithm_label || r.model_algorithm || '随机森林'}</span>
+                            {r.is_active && <span className="pa-model-badge">线上</span>}
+                          </div>
+                        </td>
+                        <td>
+                          {(() => {
+                            const merge = runMergeModeInfo(r)
+                            return (
+                              <span
+                                className={`pa-merge-badge ${merge.variant}`}
+                                title={merge.title}
+                              >
+                                {merge.text}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td>{r.test_score != null ? `${(r.test_score * 100).toFixed(2)}%` : '—'}</td>
                         <td>{r.malicious_recall != null ? `${(r.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
@@ -828,10 +1619,10 @@ export default function ProtocolAnalysis() {
                         <td className="pa-run-actions">
                           <button
                             type="button"
-                            className="pa-btn pa-btn-sm"
-                            onClick={() => setExpandedRunId(expandedRunId === r.id ? null : r.id)}
+                            className={`pa-btn pa-btn-sm${viewingRunId === r.id ? ' primary' : ''}`}
+                            onClick={() => handleViewRunMetrics(r.id)}
                           >
-                            {expandedRunId === r.id ? '收起' : '详情'}
+                            {viewingRunId === r.id ? '收起评估' : '评估'}
                           </button>
                           <button
                             type="button"
@@ -843,28 +1634,27 @@ export default function ProtocolAnalysis() {
                           </button>
                         </td>
                       </tr>
-                      {expandedRunId === r.id && r.confusion_matrix?.matrix && (
-                        <tr key={`${r.id}-detail`} className="pa-run-detail-row">
-                          <td colSpan={5}>
-                            <span className="muted small">混淆矩阵 </span>
-                            <code>
-                              {JSON.stringify(r.confusion_matrix.matrix)}
-                            </code>
-                            {r.feature_importance?.length > 0 && (
-                              <span className="muted small">
-                                {' '}
-                                · Top 特征: {r.feature_importance.slice(0, 3).map((f) => f.name).join(', ')}
-                              </span>
-                            )}
-                          </td>
-                        </tr>
-                      )}
                     </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
+
+          <div ref={metricsPanelRef}>
+            {viewingRunLoading ? (
+              <p className="muted small pa-metrics-hint">正在加载训练评估与算法基线对比…</p>
+            ) : viewingRun ? (
+              <TrainMetricsPanel
+                run={viewingRun}
+                title={viewingRun.is_active ? '本次训练评估（线上）' : '训练记录评估'}
+              />
+            ) : (
+              <p className="muted small pa-metrics-hint">
+                点击训练记录中的「评估」查看合并的标注会话、算法基线对比、混淆矩阵与特征重要性
+              </p>
+            )}
+          </div>
         </section>
       </main>
       <style>{pageStyles}</style>
@@ -914,10 +1704,23 @@ const pageStyles = `
   .pa-btn.primary {
     background: linear-gradient(90deg, #ab08e3, #c73ef5); border-color: transparent; color: #fff; font-weight: 600;
   }
-  .bpf-label { display: flex; align-items: center; gap: 8px; color: #aaa; font-size: 13px; margin-left: auto; }
-  .bpf-input {
-    width: 220px; padding: 8px 12px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff;
+  .bpf-wrap {
+    display: flex; align-items: center; gap: 8px; margin-left: auto; flex-wrap: wrap;
+    max-width: 100%;
   }
+  .bpf-label-text { color: #aaa; font-size: 13px; white-space: nowrap; }
+  .bpf-select {
+    min-width: 168px; padding: 8px 32px 8px 12px; border-radius: 8px; border: 1px solid #444;
+    background: #111 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23aaa' d='M2 4l4 4 4-4'/%3E%3C/svg%3E") no-repeat right 10px center;
+    color: #fff; font-size: 13px; cursor: pointer; appearance: none;
+  }
+  .bpf-select:disabled { opacity: 0.45; cursor: not-allowed; }
+  .bpf-input {
+    width: min(200px, 100%); padding: 8px 12px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff;
+  }
+  .bpf-btn { flex-shrink: 0; }
+  .bpf-applied { color: #c9a0ff; font-size: 12px; }
+  .muted-inline { color: #777; font-size: 12px; }
   .pa-stats {
     display: flex; gap: 24px; color: #aaa; font-size: 13px; margin-bottom: 16px; align-items: center;
   }
@@ -965,6 +1768,8 @@ const pageStyles = `
   .table-scroll { overflow-x: auto; max-width: 100%; }
   .fname-cell { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .annotate-cell { white-space: nowrap; }
+  .pa-mini.danger { color: #ff8a8a; border-color: #633; }
+  .pa-mini.danger:hover { background: rgba(255, 80, 80, 0.12); }
   .pa-mini {
     padding: 4px 8px; margin: 2px; font-size: 11px; border-radius: 6px;
     border: 1px solid #444; background: #2a2a2a; color: #ccc; cursor: pointer;
@@ -974,6 +1779,22 @@ const pageStyles = `
   .pa-tag.good { background: rgba(52,199,89,0.2); color: #34c759; }
   .pa-tag.bad { background: rgba(255,59,48,0.2); color: #ff6b6b; }
   .pa-tag.muted { background: #333; color: #888; font-weight: 400; }
+  .pa-mode-tag {
+    display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 11px; font-weight: 600;
+  }
+  .pa-mode-tag.live { background: rgba(10, 132, 255, 0.18); color: #5ac8fa; }
+  .pa-mode-tag.offline { background: rgba(255, 159, 10, 0.15); color: #ffb340; }
+  .preview-threshold-row {
+    display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 12px; align-items: flex-end;
+  }
+  .preview-th-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #aaa; }
+  .preview-th-field input {
+    width: 120px; padding: 8px 10px; border-radius: 8px; border: 1px solid #444;
+    background: #111; color: #fff; font-size: 13px;
+  }
+  .preview-file-decision .good { color: #34c759; }
+  .preview-file-decision .bad { color: #ff6b6b; }
+  .pa-table tr.high-risk-row td { background: rgba(255, 80, 80, 0.08); }
   .preview-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 14px; }
   .pa-select {
     padding: 8px 12px; border-radius: 8px; border: 1px solid #444; background: #111; color: #fff;
@@ -982,11 +1803,69 @@ const pageStyles = `
   .preview-summary { color: #ccc; font-size: 14px; display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
   .feature-panel, .train-panel, .runs-panel, .sessions-panel, .schema-panel, .metrics-panel { margin-bottom: 16px; }
   .pa-check { display: flex; align-items: center; gap: 8px; color: #aaa; font-size: 13px; margin: 12px 0; cursor: pointer; }
+  .pa-merge-mode-row { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+  .pa-merge-mode-label { color: #aaa; font-size: 13px; }
+  .pa-radio { display: flex; align-items: center; gap: 8px; color: #bbb; font-size: 13px; cursor: pointer; }
+  .pa-labeled-summary { margin: 0 0 12px; line-height: 1.5; }
+  .pa-training-pool-table-wrap { margin: 12px 0 16px; }
+  .pa-training-pool-title { margin: 0 0 8px; font-size: 14px; color: #ddd; font-weight: 600; }
+  .pa-training-pool-table tr.pa-pool-in td { background: rgba(34, 197, 94, 0.05); }
+  .pa-pool-toggle {
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.04);
+    color: #aaa;
+    border-radius: 999px;
+    padding: 2px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .pa-pool-toggle.on {
+    border-color: rgba(34, 197, 94, 0.5);
+    background: rgba(34, 197, 94, 0.15);
+    color: #86efac;
+  }
+  .pa-pool-toggle:hover { filter: brightness(1.08); }
+  .pa-baseline-details {
+    margin-top: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 10px 14px;
+    background: rgba(0,0,0,0.15);
+  }
+  .pa-baseline-details summary {
+    cursor: pointer;
+    color: #ccc;
+    font-size: 14px;
+    font-weight: 600;
+    user-select: none;
+  }
+  .pa-baseline-policy { margin: 10px 0 8px; line-height: 1.55; }
+  .pa-baseline-block { margin-top: 8px; }
+  .pa-baseline-table td:first-child { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .pa-baseline-table tr.pa-baseline-primary td { background: rgba(34, 197, 94, 0.06); }
+  .pa-merged-sessions-block { margin: 16px 0 12px; }
+  .pa-merged-sessions-table { margin-top: 8px; }
+  .pa-protocol-tags.readonly .pa-tag-btn.readonly {
+    cursor: default; pointer-events: none; padding: 2px 8px; font-size: 11px;
+  }
+  .pa-protocol-tags { display: flex; flex-wrap: wrap; gap: 4px; min-width: 168px; }
+  .pa-tag-btn {
+    padding: 2px 6px; border-radius: 6px; border: 1px solid #444; background: #222;
+    color: #888; font-size: 10px; cursor: pointer;
+  }
+  .pa-tag-btn.on { border-color: rgba(171, 8, 227, 0.6); color: #e8d0f5; background: rgba(171, 8, 227, 0.15); }
+  .pa-tag-cell { vertical-align: top; }
+  .pa-sample-merge-mode { margin: 0 0 8px; }
   .train-panel .pa-btn.primary { margin-top: 8px; }
   .pa-schema-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; max-height: 280px; overflow-y: auto; }
   .pa-schema-item { background: rgba(0,0,0,0.25); border: 1px solid #2a2a2a; border-radius: 10px; padding: 8px 10px; }
   .pa-schema-item summary { cursor: pointer; color: var(--primary-light); font-size: 13px; font-weight: 600; }
   .pa-schema-item p { margin: 8px 0 0; font-size: 12px; color: var(--text-secondary); line-height: 1.45; }
+  .pa-metrics-hint { margin: 16px 0 0; }
+  .pa-metrics-rf-hint { margin: 10px 0 0; line-height: 1.55; }
+  .pa-metrics-subtitle { margin: -4px 0 12px; color: #888; }
+  .metrics-panel { margin-top: 16px; }
   .pa-metrics-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
   .pa-metric-card { flex: 1; min-width: 120px; padding: 12px 14px; border-radius: 12px; background: rgba(171,8,227,0.1); border: 1px solid rgba(171,8,227,0.25); }
   .pa-metric-card .label { display: block; font-size: 11px; color: var(--text-secondary); margin-bottom: 4px; }
@@ -1000,6 +1879,57 @@ const pageStyles = `
   .pa-imp-fill { height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light)); }
   .pa-importance-list .num { text-align: right; color: #aaa; font-variant-numeric: tabular-nums; }
   .pa-table tr.highlight td { color: var(--primary-light); font-weight: 600; }
+  .pa-run-detail-row td { padding: 10px 12px 14px; background: rgba(0,0,0,0.2); border-top: none; }
+  .pa-run-sample-detail { margin: 0 0 16px; line-height: 1.55; }
+  .pa-sample-source-title { margin: 0 0 10px; font-size: 14px; color: #ddd; font-weight: 600; }
+  .pa-sample-source-table { margin-bottom: 10px; font-size: 12px; }
+  .pa-sample-source-table th { color: #aaa; font-weight: 500; white-space: nowrap; }
+  .pa-sample-source-table td, .pa-sample-source-table th { padding: 8px 10px; }
+  .pa-sample-total-row th, .pa-sample-total-row td { border-top: 1px solid #444; color: #ddd; }
+  .pa-sample-split-line { margin: 0 0 4px; line-height: 1.55; }
+  .pa-run-extra-detail { margin: 0; line-height: 1.5; }
   .pa-run-actions { display: flex; flex-wrap: wrap; gap: 6px; }
   .pa-run-detail-row td { background: rgba(0,0,0,0.2); font-size: 12px; }
+  .pa-active-model-hint { margin: -4px 0 14px; }
+  .pa-active-model-hint strong { color: var(--primary-light); font-weight: 600; }
+  .pa-model-cell { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+  .pa-model-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #0d1f12;
+    background: linear-gradient(90deg, #4ade80, #22c55e);
+    letter-spacing: 0.02em;
+  }
+  .pa-merge-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+    cursor: help;
+  }
+  .pa-merge-badge.cumulative {
+    color: #e8d4ff;
+    background: rgba(171, 8, 227, 0.22);
+    border: 1px solid rgba(171, 8, 227, 0.45);
+  }
+  .pa-merge-badge.pool {
+    color: #bfdbfe;
+    background: rgba(59, 130, 246, 0.18);
+    border: 1px solid rgba(59, 130, 246, 0.45);
+  }
+  .pa-merge-badge.local {
+    color: #a3a3a3;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .pa-table tr.pa-run-active td { background: rgba(34, 197, 94, 0.08); }
+  .pa-table tr.pa-run-active td:first-child { box-shadow: inset 3px 0 0 #22c55e; }
+  .pa-table tr.pa-run-viewing td { background: rgba(171, 8, 227, 0.08); }
+  .pa-table tr.pa-run-viewing td:first-child { box-shadow: inset 3px 0 0 var(--primary); }
 `

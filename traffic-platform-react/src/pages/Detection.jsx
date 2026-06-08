@@ -11,6 +11,8 @@ export default function Detection() {
   const [progress, setProgress] = useState(0)
   const [result, setResult] = useState(null)
   const [history, setHistory] = useState([])
+  const [probThreshold, setProbThreshold] = useState(0.8)
+  const [ratioThreshold, setRatioThreshold] = useState(0.2)
   const fileInputRef = useRef(null)
 
   // 模拟检测进度
@@ -63,6 +65,8 @@ export default function Detection() {
     
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('prob_threshold', String(probThreshold))
+    formData.append('ratio_threshold', String(ratioThreshold))
     
     try {
       setStatus('analyzing')
@@ -76,11 +80,13 @@ export default function Detection() {
       
       if (response.ok) {
         const pr = data.protocols || {}
+        const fa = data.flow_analysis || {}
         setResult({
           status: data.result === '安全' ? 'safe' : 'danger',
           message: data.result,
           time: data.elapsed_time,
           packets: data.total_packets,
+          flowAnalysis: fa,
           protocols: {
             TCP: pr.TCP ?? 0,
             UDP: pr.UDP ?? 0,
@@ -124,7 +130,9 @@ export default function Detection() {
       <div className="detection-content">
         <header className="det-page-head">
           <h1>流量检测</h1>
-          <p>上传 pcap 后由服务端提取特征并调用已训练模型给出安全 / 危险结论，右侧可查看协议占比与耗时。</p>
+          <p>
+            上传 pcap 后按流级特征与随机森林概率判定文件结论；采用可配置阈值（非「任一流恶意即整包危险」），降低正常流量误报。
+          </p>
         </header>
 
         <div className="stats-row">
@@ -211,6 +219,36 @@ export default function Detection() {
               )}
             </div>
 
+            <div className="det-threshold-row">
+              <label>
+                <span>恶意概率阈值</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={probThreshold}
+                  onChange={(e) => setProbThreshold(Number(e.target.value))}
+                  disabled={status === 'uploading' || status === 'analyzing'}
+                />
+              </label>
+              <label>
+                <span>恶意流占比阈值</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={ratioThreshold}
+                  onChange={(e) => setRatioThreshold(Number(e.target.value))}
+                  disabled={status === 'uploading' || status === 'analyzing'}
+                />
+              </label>
+            </div>
+            <p className="det-threshold-hint">
+              判危险：存在流 P(恶意)≥概率阈值，或硬分类恶意流占比&gt;占比阈值（默认 0.8 / 20%）。
+            </p>
+
             {/* 检测按钮 */}
             <button 
               className="detect-btn"
@@ -275,7 +313,34 @@ export default function Detection() {
                     <span>数据包</span>
                     <strong>{Number(result.packets || 0).toLocaleString()}</strong>
                   </div>
+                  {result.flowAnalysis?.flow_count > 0 && (
+                    <>
+                      <div className="det-chip">
+                        <Icon name="pieChart" size={18} />
+                        <span>流条数</span>
+                        <strong>{result.flowAnalysis.flow_count}</strong>
+                      </div>
+                      <div className="det-chip">
+                        <Icon name="danger" size={18} />
+                        <span>最高 P(恶意)</span>
+                        <strong>
+                          {((result.flowAnalysis.max_malicious_prob || 0) * 100).toFixed(1)}%
+                        </strong>
+                      </div>
+                    </>
+                  )}
                 </div>
+                {result.flowAnalysis?.flow_count > 0 && (
+                  <p className="det-flow-summary muted">
+                    恶意流 {result.flowAnalysis.malicious_flow_count} 条（占比{' '}
+                    {((result.flowAnalysis.malicious_flow_ratio || 0) * 100).toFixed(1)}%），
+                    高概率流 {result.flowAnalysis.high_prob_flow_count} 条；
+                    阈值 P≥{result.flowAnalysis.prob_threshold} 或占比&gt;
+                    {((result.flowAnalysis.ratio_threshold || 0) * 100).toFixed(0)}%
+                    {result.flowAnalysis.triggered_by_prob ? ' · 触发概率' : ''}
+                    {result.flowAnalysis.triggered_by_ratio ? ' · 触发占比' : ''}
+                  </p>
+                )}
 
                 <div className="protocol-stats">
                   <h4>协议分布</h4>
