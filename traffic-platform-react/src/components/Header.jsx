@@ -44,6 +44,9 @@ export default function Header() {
           <Link to="/analysis" className={isActive('/analysis')}>抓包协议分析</Link>
         )}
         {user?.role === 'admin' && (
+          <Link to="/admin/train" className={isActive('/admin/train')}>模型重训</Link>
+        )}
+        {user?.role === 'admin' && (
           <Link to="/admin/users" className={isActive('/admin/users')}>用户管理</Link>
         )}
       </div>

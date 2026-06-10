@@ -21,6 +21,7 @@ from traffic_platform.train_test.main import (
 from traffic_platform.web_platform import app, mongo
 from traffic_platform.web_platform.capture_service import capture_service
 from traffic_platform.web_platform.audit_log import log_operation
+from traffic_platform.web_platform.password_policy import validate_password
 
 import hashlib
 import json
@@ -489,8 +490,9 @@ def register():
     if len(username) < 3 or len(username) > 10:
         return jsonify({'error': '用户名长度应为3-10个字符'}), 400
 
-    if len(password) < 6 or len(password) > 16:
-        return jsonify({'error': '密码长度应为6-16个字符'}), 400
+    ok, pw_err = validate_password(password, username)
+    if not ok:
+        return jsonify({'error': pw_err}), 400
 
     if password != confirm_password:
         return jsonify({'error': '两次输入的密码不一致'}), 400
@@ -562,16 +564,16 @@ def profile_change_password():
 
     if not old_password or not new_password:
         return jsonify({'error': '请填写原密码和新密码'}), 400
-    if len(new_password) < 6 or len(new_password) > 16:
-        return jsonify({'error': '新密码长度应为 6-16 个字符'}), 400
+    user = _user_doc_by_session()
+    if not user:
+        return jsonify({'error': '请重新登录'}), 401
+    ok, pw_err = validate_password(new_password, user.get('username'))
+    if not ok:
+        return jsonify({'error': pw_err}), 400
     if new_password != confirm_password:
         return jsonify({'error': '两次输入的新密码不一致'}), 400
     if old_password == new_password:
         return jsonify({'error': '新密码不能与原密码相同'}), 400
-
-    user = _user_doc_by_session()
-    if not user:
-        return jsonify({'error': '请重新登录'}), 401
     if not check_password_hash(user['password'], old_password):
         log_operation(
             mongo, 'change_password', success=False, detail='原密码错误',
@@ -1792,8 +1794,9 @@ def admin_users_create():
         return jsonify({'error': '用户名和密码不能为空'}), 400
     if len(username) < 3 or len(username) > 10:
         return jsonify({'error': '用户名长度应为 3-10 个字符'}), 400
-    if len(password) < 6 or len(password) > 16:
-        return jsonify({'error': '密码长度应为 6-16 个字符'}), 400
+    ok, pw_err = validate_password(password, username)
+    if not ok:
+        return jsonify({'error': pw_err}), 400
     if password != confirm_password:
         return jsonify({'error': '两次输入的密码不一致'}), 400
     if role not in ('admin', 'user'):
@@ -1840,8 +1843,12 @@ def admin_user_patch(user_id):
 
     if 'password' in data and data['password']:
         pw = data['password']
-        if len(pw) < 6 or len(pw) > 16:
-            return jsonify({'error': '密码长度应为 6-16 个字符'}), 400
+        target = mongo.db.users.find_one({'_id': oid}, {'username': 1})
+        if not target:
+            return jsonify({'error': '用户不存在'}), 404
+        ok, pw_err = validate_password(pw, target.get('username'))
+        if not ok:
+            return jsonify({'error': pw_err}), 400
         updates['password'] = generate_password_hash(pw)
 
     if 'status' in data:

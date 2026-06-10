@@ -2,6 +2,7 @@ import { useState } from 'react'
 import axios from 'axios'
 import { useNavigate, Link } from 'react-router-dom'
 import { apiUrl } from '../api'
+import { PASSWORD_POLICY_HINT, validatePassword } from '../passwordPolicy'
 import './Login.css'
 
 // 配置 axios 允许携带 cookie
@@ -18,6 +19,11 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     
+    const pwErr = validatePassword(password, username)
+    if (pwErr) {
+      setError(pwErr)
+      return
+    }
     if (password !== confirmPassword) {
       setError('两次输入的密码不一致')
       return
@@ -86,7 +92,7 @@ export default function Register() {
               <div className="input-icon">🔒</div>
               <input
                 type="password"
-                placeholder="密码 (6-16个字符)"
+                placeholder="请设置密码"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -103,6 +109,7 @@ export default function Register() {
                 required
               />
             </div>
+            <p className="pwd-policy-hint">{PASSWORD_POLICY_HINT}</p>
             
             <button type="submit" className="login-btn" disabled={loading}>
               {loading ? '注册中...' : '注 册'}

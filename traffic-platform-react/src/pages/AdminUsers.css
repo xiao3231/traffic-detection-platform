@@ -285,10 +285,31 @@
   font-size: 17px;
 }
 
+.adm-modal-err {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 59, 48, 0.14);
+  border: 1px solid rgba(255, 59, 48, 0.45);
+  color: #ffb4ae;
+  font-size: 14px;
+  line-height: 1.5;
+  margin-bottom: 14px;
+}
+
 .adm-modal .sub {
   margin: 0 0 16px;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.adm-pwd-hint {
+  margin: -6px 0 14px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .adm-field-label {

@@ -27,11 +27,20 @@ const FEATURE_HISTORY = {
 
 const FEATURE_ANALYSIS = {
   to: '/analysis',
-  icon: 'barChart',
+  icon: 'scan',
   title: '抓包协议分析',
-  desc: '实时或离线抓包、会话标注与特征预览；支持模型重训、指标对比与版本恢复，管理员工作台核心入口。',
+  desc: '实时或离线抓包、协议解析、特征预览与会话标注，为训练样本池提供标注数据。',
   cta: '打开分析',
   cardSize: 'hero',
+}
+
+const FEATURE_MODEL_TRAIN = {
+  to: '/admin/train',
+  icon: 'barChart',
+  title: '模型重训',
+  desc: '管理训练样本池、触发重训，查看训练记录、评估指标与历史版本恢复。',
+  cta: '模型重训',
+  cardSize: 'side',
 }
 
 const FEATURE_ADMIN_USERS = {
@@ -58,6 +67,7 @@ function homeFeatureCards(isAdmin) {
       FEATURE_ANALYSIS,
       FEATURE_HISTORY,
       FEATURE_DETECTION,
+      FEATURE_MODEL_TRAIN,
       FEATURE_ADMIN_USERS,
       FEATURE_PROFILE,
     ]
@@ -84,7 +94,8 @@ function cardIconSize(cardSize) {
 /**卡片布局 */
 function HomeFeatureBento({ isAdmin }) {
   const cards = homeFeatureCards(isAdmin)
-  const bentoMod = cards.length === 5 ? 'home-cards--bento-5' : 'home-cards--bento-3'
+  const bentoMod =
+    cards.length === 6 ? 'home-cards--bento-6' : cards.length === 5 ? 'home-cards--bento-5' : 'home-cards--bento-3'
 
   return (
     <div className={`home-cards ${bentoMod}`}>
@@ -229,7 +240,7 @@ export default function Home() {
           <p className="home-hero-sub">
             你好！{role === 'admin' ? '管理员' : '用户'}！
             <br />
-            基于 Scapy 与机器学习的一站式平台：检测、历史归档{role === 'admin' ? '、抓包与模型训练' : ''}
+            基于 Scapy 与机器学习的一站式平台：检测、历史归档{role === 'admin' ? '、抓包标注与模型重训' : ''}
             。从下方卡片进入各模块。
           </p>
           <div className="home-live-row">
@@ -247,7 +258,7 @@ export default function Home() {
             <Link to="/login">登录</Link>
             或
             <Link to="/register">注册</Link>
-            （抓包协议分析仅管理员可见）。
+            （抓包协议分析、模型重训与用户管理仅管理员可见）。
           </div>
         )}
 

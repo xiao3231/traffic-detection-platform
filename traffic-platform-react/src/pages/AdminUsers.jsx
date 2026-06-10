@@ -3,7 +3,18 @@ import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Icon from '../components/Icon'
 import { apiUrl, readJsonResponse } from '../api'
+import { PASSWORD_POLICY_HINT, validatePassword } from '../passwordPolicy'
 import './AdminUsers.css'
+
+function ModalError({ message }) {
+  if (!message) return null
+  return (
+    <div className="adm-modal-err" role="alert">
+      <Icon name="error" size={18} />
+      <span>{message}</span>
+    </div>
+  )
+}
 
 function PasswordInput({ label, value, onChange, placeholder, autoComplete = 'new-password' }) {
   const [visible, setVisible] = useState(false)
@@ -64,6 +75,8 @@ export default function AdminUsers() {
   const [createConfirm, setCreateConfirm] = useState('')
   const [createRole, setCreateRole] = useState('user')
   const [createLoading, setCreateLoading] = useState(false)
+  const [createError, setCreateError] = useState(null)
+  const [passwordError, setPasswordError] = useState(null)
   const debounceRef = useRef(null)
 
   useEffect(() => {
@@ -129,12 +142,19 @@ export default function AdminUsers() {
 
   const savePassword = async () => {
     if (!passwordUser || !newPassword) return
+    const pwErr = validatePassword(newPassword, passwordUser.username)
+    if (pwErr) {
+      setPasswordError(pwErr)
+      return
+    }
+    setPasswordError(null)
     try {
       await patchUser(passwordUser.id, { password: newPassword })
       setPasswordUser(null)
       setNewPassword('')
+      setPasswordError(null)
     } catch (e) {
-      setError(e.message)
+      setPasswordError(e.message)
     }
   }
 
@@ -157,8 +177,17 @@ export default function AdminUsers() {
   }
 
   const createUser = async () => {
+    const pwErr = validatePassword(createPassword, createUsername.trim())
+    if (pwErr) {
+      setCreateError(pwErr)
+      return
+    }
+    if (createPassword !== createConfirm) {
+      setCreateError('两次输入的密码不一致')
+      return
+    }
     setCreateLoading(true)
-    setError(null)
+    setCreateError(null)
     try {
       const res = await fetch(apiUrl('/api/admin/users'), {
         method: 'POST',
@@ -178,12 +207,24 @@ export default function AdminUsers() {
       setCreatePassword('')
       setCreateConfirm('')
       setCreateRole('user')
+      setCreateError(null)
       await load()
     } catch (e) {
-      setError(e.message)
+      setCreateError(e.message)
     } finally {
       setCreateLoading(false)
     }
+  }
+
+  const openCreateModal = () => {
+    setCreateError(null)
+    setShowCreate(true)
+  }
+
+  const openPasswordModal = (u) => {
+    setPasswordError(null)
+    setNewPassword('')
+    setPasswordUser(u)
   }
 
   if (!gateOk) {
@@ -223,7 +264,7 @@ export default function AdminUsers() {
           <span className="adm-count">
             {loading ? '加载中…' : `共 ${total} 个账号`}
           </span>
-          <button type="button" className="adm-btn primary" onClick={() => setShowCreate(true)}>
+          <button type="button" className="adm-btn primary" onClick={openCreateModal}>
             创建用户
           </button>
         </div>
@@ -255,7 +296,7 @@ export default function AdminUsers() {
                 </div>
               </div>
               <div className="adm-actions">
-                <button type="button" className="adm-btn primary" onClick={() => setPasswordUser(u)}>
+                <button type="button" className="adm-btn primary" onClick={() => openPasswordModal(u)}>
                   修改密码
                 </button>
                 {u.status === 'blocked' ? (
@@ -287,6 +328,7 @@ export default function AdminUsers() {
             <div className="adm-modal" role="dialog" aria-labelledby="adm-create-title">
               <h3 id="adm-create-title">创建用户</h3>
               <p className="sub">由管理员新建账号，操作将记入审计日志。</p>
+              <ModalError message={createError} />
               <label className="adm-field-label">
                 用户名（3–10 位）
                 <input
@@ -298,11 +340,12 @@ export default function AdminUsers() {
                 />
               </label>
               <PasswordInput
-                label="密码（6–16 位）"
+                label="密码"
                 value={createPassword}
                 onChange={(e) => setCreatePassword(e.target.value)}
-                placeholder="请输入密码"
+                placeholder="须含字母与数字"
               />
+              <p className="adm-pwd-hint">{PASSWORD_POLICY_HINT}</p>
               <PasswordInput
                 label="确认密码"
                 value={createConfirm}
@@ -321,7 +364,10 @@ export default function AdminUsers() {
                   type="button"
                   className="adm-btn"
                   disabled={createLoading}
-                  onClick={() => setShowCreate(false)}
+                  onClick={() => {
+                    setShowCreate(false)
+                    setCreateError(null)
+                  }}
                 >
                   取消
                 </button>
@@ -347,15 +393,23 @@ export default function AdminUsers() {
             <div className="adm-modal" role="dialog" aria-labelledby="adm-pw-title">
               <h3 id="adm-pw-title">重置密码</h3>
               <p className="sub">用户：{passwordUser.username}</p>
-              <input
-                type="password"
-                placeholder="新密码 6–16 位"
+              <ModalError message={passwordError} />
+              <PasswordInput
+                label="新密码"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                autoComplete="new-password"
+                placeholder="须含字母与数字"
               />
+              <p className="adm-pwd-hint">{PASSWORD_POLICY_HINT}</p>
               <div className="adm-modal-actions">
-                <button type="button" className="adm-btn" onClick={() => setPasswordUser(null)}>
+                <button
+                  type="button"
+                  className="adm-btn"
+                  onClick={() => {
+                    setPasswordUser(null)
+                    setPasswordError(null)
+                  }}
+                >
                   取消
                 </button>
                 <button type="button" className="adm-btn primary" onClick={savePassword}>

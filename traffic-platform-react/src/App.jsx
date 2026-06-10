@@ -5,6 +5,7 @@ import Home from './pages/Home'
 import Detection from './pages/Detection'
 import History from './pages/History'
 import ProtocolAnalysis from './pages/ProtocolAnalysis'
+import ModelRetrain from './pages/admin/ModelRetrain'
 import AdminUsers from './pages/AdminUsers'
 import Profile from './pages/Profile'
 import './App.css'
@@ -19,6 +20,7 @@ function App() {
         <Route path="/detection" element={<Detection />} />
         <Route path="/history" element={<History />} />
         <Route path="/analysis" element={<ProtocolAnalysis />} />
+        <Route path="/admin/train" element={<ModelRetrain />} />
         <Route path="/admin/users" element={<AdminUsers />} />
         <Route path="/profile" element={<Profile />} />
         <Route path="*" element={<Navigate to="/" replace />} />

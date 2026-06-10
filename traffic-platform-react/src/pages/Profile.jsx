@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import { apiUrl, readJsonResponse } from '../api'
+import { PASSWORD_POLICY_HINT, validatePassword } from '../passwordPolicy'
 
 export default function Profile() {
   const [user, setUser] = useState(null)
@@ -29,6 +30,15 @@ export default function Profile() {
     e.preventDefault()
     setPwdMsg(null)
     setPwdError(null)
+    const pwErr = validatePassword(newPassword, user?.username)
+    if (pwErr) {
+      setPwdError(pwErr)
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPwdError('两次输入的新密码不一致')
+      return
+    }
     setPwdLoading(true)
     try {
       const res = await fetch(apiUrl('/api/profile/change-password'), {
@@ -80,7 +90,7 @@ export default function Profile() {
 
         <div className="profile-card pwd-card">
           <h2>修改密码</h2>
-          <p className="pwd-hint">新密码长度 6～16 位，修改成功后请妥善保管。</p>
+          <p className="pwd-hint">{PASSWORD_POLICY_HINT}</p>
           <form onSubmit={handleChangePassword}>
             <div className="field">
               <label htmlFor="old-pwd">原密码</label>
@@ -101,10 +111,8 @@ export default function Profile() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="6-16 个字符"
+                placeholder="须含字母与数字"
                 required
-                minLength={6}
-                maxLength={16}
                 autoComplete="new-password"
               />
             </div>

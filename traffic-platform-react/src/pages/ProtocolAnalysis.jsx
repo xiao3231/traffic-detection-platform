@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Fragment } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import Header from '../components/Header'
 import Icon from '../components/Icon'
@@ -66,316 +66,10 @@ function isOfflineCaptureSession(session) {
   return Boolean(session?.source_file)
 }
 
-function runMergeModeInfo(run) {
-  const extraPcaps = (run?.extra_good_pcaps ?? 0) + (run?.extra_bad_pcaps ?? 0)
-  const mergedCount =
-    run?.merged_sessions?.length ?? run?.merged_session_ids?.length ?? extraPcaps ?? 0
-
-  if (run?.include_labeled_captures === false || extraPcaps === 0) {
-    return {
-      text: '仅本地',
-      variant: 'local',
-      title: '未合并训练池 pcap，仅使用 goodx/badx',
-    }
-  }
-
-  return {
-    text: mergedCount > 0 ? `已选·${mergedCount}` : '已选 pcap',
-    variant: 'pool',
-    title: `本次训练合并训练池中 ${mergedCount} 个标注 pcap`,
-  }
-}
-
-function TrainMetricsPanel({ run, title = '训练评估' }) {
-  if (!run) return null
-  const algo = run.model_algorithm_label || run.model_algorithm || '随机森林'
-  const timeLabel = run.created_at ? formatUtcTime(run.created_at) : null
-
-  return (
-    <section className="pa-panel metrics-panel">
-      <h2>
-        <Icon name="chart" size={20} /> {title}
-      </h2>
-      <p className="muted small pa-metrics-subtitle">
-        {algo}
-        {timeLabel ? ` · ${timeLabel}` : ''}
-        {run.is_active ? ' · 当前线上模型' : ''}
-      </p>
-      <RunSampleDetail run={run} />
-      <div className="pa-metrics-grid">
-        {run.sample_total != null && (
-          <>
-            <div className="pa-metric-card">
-              <span className="label">训练样本（流级）</span>
-              <strong>{run.sample_total}</strong>
-            </div>
-            <div className="pa-metric-card">
-              <span className="label">拟合 / 测试划分</span>
-              <strong>
-                {run.train_set_size ?? '—'} / {run.test_set_size ?? '—'}
-              </strong>
-            </div>
-          </>
-        )}
-        <div className="pa-metric-card">
-          <span className="label">测试准确率</span>
-          <strong>{run.test_score != null ? `${(run.test_score * 100).toFixed(2)}%` : '—'}</strong>
-        </div>
-        <div className="pa-metric-card">
-          <span className="label">恶意 Recall</span>
-          <strong>
-            {run.malicious_recall != null ? `${(run.malicious_recall * 100).toFixed(2)}%` : '—'}
-          </strong>
-        </div>
-        <div className="pa-metric-card">
-          <span className="label">恶意 F1</span>
-          <strong>{run.malicious_f1 != null ? `${(run.malicious_f1 * 100).toFixed(2)}%` : '—'}</strong>
-        </div>
-      </div>
-      <p className="muted small pa-metrics-rf-hint">
-        上方为<strong>随机森林</strong>在<strong>测试集</strong>上的指标，与下表「随机森林」行的测试准确率 / Recall / F1 一致；
-        下表多出的「训练准确率」是拟合集表现，通常高于测试集。
-      </p>
-
-      <details className="pa-baseline-details">
-        <summary>论文用：算法对比（可选，点击展开）</summary>
-        <div className="pa-sub-block pa-baseline-block">
-        <p className="muted small pa-baseline-policy">
-          对比使用<strong>该次重训当时</strong>的样本（goodx/badx + 当时纳入的标注 pcap），不是当前训练池。
-          线上固定为<strong>随机森林</strong>，其它算法仅作论文参考，不自动替换。
-        </p>
-        {run.baseline_comparison?.models?.length > 0 ? (
-          <>
-            {run.baseline_comparison.training_data_note && (
-              <p className="muted small">
-                对比样本：<strong>{run.baseline_comparison.training_data_note}</strong>
-              </p>
-            )}
-            <p className="muted small">{run.baseline_comparison.description}</p>
-            <table className="pa-table pa-baseline-table">
-              <thead>
-                <tr>
-                  <th>算法</th>
-                  <th>训练准确率</th>
-                  <th>测试准确率</th>
-                  <th>恶意 Recall</th>
-                  <th>恶意 F1</th>
-                </tr>
-              </thead>
-              <tbody>
-                {run.baseline_comparison.models.map((m) => (
-                  <tr key={m.name} className={m.is_primary ? 'pa-baseline-primary' : undefined}>
-                    <td>
-                      <span>{m.label || m.name}</span>
-                      {m.is_primary && <span className="pa-model-badge">线上</span>}
-                    </td>
-                    <td>{m.train_score != null ? `${(m.train_score * 100).toFixed(2)}%` : '—'}</td>
-                    <td>{m.test_score != null ? `${(m.test_score * 100).toFixed(2)}%` : '—'}</td>
-                    <td>
-                      {m.malicious_recall != null ? `${(m.malicious_recall * 100).toFixed(2)}%` : '—'}
-                    </td>
-                    <td>{m.malicious_f1 != null ? `${(m.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        ) : (
-          <p className="muted small">
-            正在计算或未生成算法对比。可忽略；上方指标卡片即为本次线上模型结果。
-          </p>
-        )}
-        </div>
-      </details>
-
-      {run.confusion_matrix?.matrix && (
-        <div className="pa-cm-block">
-          <h3>混淆矩阵（测试集 · 随机森林）</h3>
-          <p className="muted small">{run.confusion_matrix.description}</p>
-          <table className="pa-table pa-cm-table">
-            <thead>
-              <tr>
-                <th />
-                <th>预测恶意</th>
-                <th>预测安全</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <th>真实恶意</th>
-                <td>{run.confusion_matrix.matrix[0]?.[0]}</td>
-                <td>{run.confusion_matrix.matrix[0]?.[1]}</td>
-              </tr>
-              <tr>
-                <th>真实安全</th>
-                <td>{run.confusion_matrix.matrix[1]?.[0]}</td>
-                <td>{run.confusion_matrix.matrix[1]?.[1]}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {run.feature_importance?.length > 0 && (
-        <div className="pa-sub-block">
-          <h3>特征重要性（{algo} Top）</h3>
-          <ul className="pa-importance-list">
-            {run.feature_importance.map((f) => (
-              <li key={f.name}>
-                <span>{f.name}</span>
-                <div className="pa-imp-bar">
-                  <div
-                    className="pa-imp-fill"
-                    style={{
-                      width: `${Math.min(100, (f.importance / (run.feature_importance[0]?.importance || 1)) * 100)}%`,
-                    }}
-                  />
-                </div>
-                <span className="num">{(f.importance * 100).toFixed(2)}%</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-    </section>
-  )
-}
-
-function RunSampleDetail({ run }) {
-  const hasSource =
-    run?.local_normal_flows != null ||
-    run?.local_malicious_flows != null ||
-    (run?.extra_normal_flows ?? 0) > 0 ||
-    (run?.extra_malicious_flows ?? 0) > 0
-
-  if (run?.sample_total == null && !hasSource) {
-    return (
-      <p className="muted small pa-run-sample-detail">样本来源未记录（请重新训练后可在详情中查看）</p>
-    )
-  }
-
-  const localNormal = run.local_normal_flows ?? (hasSource ? 0 : run.sample_normal)
-  const localMalicious = run.local_malicious_flows ?? (hasSource ? 0 : run.sample_malicious)
-  const extraNormalPcaps = run.extra_good_pcaps ?? 0
-  const extraMaliciousPcaps = run.extra_bad_pcaps ?? 0
-  const extraNormalFlows = run.extra_normal_flows ?? 0
-  const extraMaliciousFlows = run.extra_malicious_flows ?? 0
-  const extraNormalPackets = run.extra_normal_packets ?? 0
-  const extraMaliciousPackets = run.extra_malicious_packets ?? 0
-  const extraPcapTotal = extraNormalPcaps + extraMaliciousPcaps
-  const mergedSessions = run.merged_sessions || []
-  const showMergedBlock = mergedSessions.length > 0 || extraPcapTotal > 0
-
-  return (
-    <div className="pa-run-sample-detail">
-      <h3 className="pa-sample-source-title">训练样本来源</h3>
-      <table className="pa-table pa-sample-source-table">
-        <thead>
-          <tr>
-            <th>来源</th>
-            <th>pcap 份数</th>
-            <th>包数</th>
-            <th>正常流</th>
-            <th>恶意流</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <th>本地默认集（goodx/badx）</th>
-            <td>—</td>
-            <td>—</td>
-            <td>{localNormal ?? '—'}</td>
-            <td>{localMalicious ?? '—'}</td>
-          </tr>
-          <tr>
-            <th>外来标注 pcap</th>
-            <td>
-              正常 {extraNormalPcaps} / 恶意 {extraMaliciousPcaps}
-            </td>
-            <td>
-              正常 {extraNormalPackets} / 恶意 {extraMaliciousPackets}
-            </td>
-            <td>{extraNormalFlows}</td>
-            <td>{extraMaliciousFlows}</td>
-          </tr>
-          <tr className="pa-sample-total-row">
-            <th>合计（流级）</th>
-            <td colSpan={2} className="muted">
-              共 {run.sample_total ?? '—'} 条流
-            </td>
-            <td>{run.sample_normal ?? '—'}</td>
-            <td>{run.sample_malicious ?? '—'}</td>
-          </tr>
-        </tbody>
-      </table>
-      {showMergedBlock && (
-        <div className="pa-merged-sessions-block">
-          <h3 className="pa-sample-source-title">本次合并的标注会话</h3>
-          {mergedSessions.length > 0 ? (
-            <table className="pa-table pa-merged-sessions-table">
-              <thead>
-                <tr>
-                  <th>文件</th>
-                  <th>模式</th>
-                  <th>标注</th>
-                  <th>协议标签</th>
-                  <th>包数</th>
-                  <th>流数</th>
-                </tr>
-              </thead>
-              <tbody>
-                {mergedSessions.map((s) => (
-                  <tr key={s.session_id}>
-                    <td className="fname-cell" title={s.filename}>
-                      {s.filename}
-                    </td>
-                    <td>{s.mode_label || '—'}</td>
-                    <td>
-                      {!s.annotation && <span className="pa-tag muted">—</span>}
-                      {s.annotation === 'normal' && <span className="pa-tag good">正常样本</span>}
-                      {s.annotation === 'malicious' && <span className="pa-tag bad">恶意样本</span>}
-                    </td>
-                    <td className="pa-tag-cell">
-                      {s.protocol_tags?.length ? (
-                        <div className="pa-protocol-tags readonly">
-                          {s.protocol_tags.map((tag) => (
-                            <span key={tag} className="pa-tag-btn on readonly">
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="muted small">—</span>
-                      )}
-                    </td>
-                    <td>{s.packet_count ?? '—'}</td>
-                    <td>{s.flow_count ?? '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <p className="muted small pa-merged-sessions-empty">
-              本条记录未保存合并明细（多为旧版训练产生）。请<strong>重启后端</strong>后重新点一次「开始重训」，即可在此看到文件名与协议标签。
-            </p>
-          )}
-        </div>
-      )}
-      <p className="muted small pa-sample-split-line">
-        按 7:3 划分后，<strong>拟合 {run.train_set_size ?? '—'} 条</strong>
-        （正常 {run.train_set_normal ?? '—'} / 恶意 {run.train_set_malicious ?? '—'}），
-        <strong>测试 {run.test_set_size ?? '—'} 条</strong>
-        （正常 {run.test_set_normal ?? '—'} / 恶意 {run.test_set_malicious ?? '—'}）。
-      </p>
-    </div>
-  )
-}
-
 export default function ProtocolAnalysis() {
   const navigate = useNavigate()
   const fileRef = useRef(null)
   const listRef = useRef(null)
-  const metricsPanelRef = useRef(null)
 
   const [ready, setReady] = useState(false)
   const [bpf, setBpf] = useState('')
@@ -396,37 +90,13 @@ export default function ProtocolAnalysis() {
   const [previewRatioThreshold, setPreviewRatioThreshold] = useState(0.2)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewSessionId, setPreviewSessionId] = useState('')
-  const [modelRuns, setModelRuns] = useState([])
-  const [activeModel, setActiveModel] = useState(null)
-  const [trainLoading, setTrainLoading] = useState(false)
-  const [restoreRunId, setRestoreRunId] = useState(null)
-  const [includeLabeledInTrain, setIncludeLabeledInTrain] = useState(true)
-  const [trainingPoolSummary, setTrainingPoolSummary] = useState(null)
   const [sniffError, setSniffError] = useState('')
   const [featureSchema, setFeatureSchema] = useState(null)
-  const [viewingRunId, setViewingRunId] = useState(null)
-  const [viewingRunDetail, setViewingRunDetail] = useState(null)
-  const [viewingRunLoading, setViewingRunLoading] = useState(false)
 
   const loadSessions = useCallback(async () => {
     const res = await fetch(apiUrl('/api/capture/sessions'), { credentials: 'include' })
     const data = await readJsonResponse(res)
     if (res.ok) setSessions(data.items || [])
-  }, [])
-
-  const loadTrainingPoolSummary = useCallback(async () => {
-    const res = await fetch(apiUrl('/api/train/labeled-summary'), { credentials: 'include' })
-    const data = await readJsonResponse(res)
-    if (res.ok) setTrainingPoolSummary(data)
-  }, [])
-
-  const loadModelRuns = useCallback(async () => {
-    const res = await fetch(apiUrl('/api/train/runs'), { credentials: 'include' })
-    const data = await readJsonResponse(res)
-    if (res.ok) {
-      setModelRuns(data.items || [])
-      setActiveModel(data.active_model || null)
-    }
   }, [])
 
   const loadFeatureSchema = useCallback(async () => {
@@ -567,8 +237,6 @@ export default function ProtocolAnalysis() {
         }
         const st = await refreshStatus()
         await loadSessions()
-        await loadModelRuns()
-        await loadTrainingPoolSummary()
         await loadFeatureSchema()
         if (!cancelled && st?.running) {
           /* 轮询由 useEffect([running,paused]) 自动启动 */
@@ -583,7 +251,7 @@ export default function ProtocolAnalysis() {
     return () => {
       cancelled = true
     }
-  }, [navigate, refreshStatus, loadSessions, loadModelRuns, loadTrainingPoolSummary, loadFeatureSchema])
+  }, [navigate, refreshStatus, loadSessions, loadFeatureSchema])
 
   const postAction = async (path, body) => {
     setBusy(true)
@@ -624,7 +292,6 @@ export default function ProtocolAnalysis() {
     setPaused(false)
     if (data.session) {
       await loadSessions()
-      await loadTrainingPoolSummary()
       alert(data.message || '会话已保存')
     } else if (data.message) {
       setError(data.message)
@@ -773,7 +440,6 @@ export default function ProtocolAnalysis() {
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || '标注失败')
       await loadSessions()
-      await loadTrainingPoolSummary()
     } catch (e) {
       setError(e.message)
     }
@@ -817,7 +483,6 @@ export default function ProtocolAnalysis() {
       const data = await readJsonResponse(res)
       if (!res.ok) throw new Error(data.error || '操作失败')
       await loadSessions()
-      await loadTrainingPoolSummary()
     } catch (e) {
       setError(e.message)
       await loadSessions()
@@ -837,107 +502,8 @@ export default function ProtocolAnalysis() {
       if (!res.ok) throw new Error(data.error || '删除失败')
       if (previewSessionId === sessionId) setPreviewSessionId('')
       await loadSessions()
-      await loadTrainingPoolSummary()
     } catch (e) {
       setError(e.message)
-    }
-  }
-
-  const handleViewRunMetrics = async (runId) => {
-    if (viewingRunId === runId) {
-      setViewingRunId(null)
-      setViewingRunDetail(null)
-      return
-    }
-    setViewingRunId(runId)
-    setViewingRunDetail(null)
-    setViewingRunLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(apiUrl(`/api/train/runs/${runId}`), { credentials: 'include' })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || '加载训练评估失败')
-      setViewingRunDetail(data.run)
-      setModelRuns((prev) => prev.map((r) => (r.id === runId ? { ...r, ...data.run } : r)))
-      requestAnimationFrame(() => {
-        metricsPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
-      })
-    } catch (e) {
-      setError(e.message)
-      setViewingRunId(null)
-      setViewingRunDetail(null)
-    } finally {
-      setViewingRunLoading(false)
-    }
-  }
-
-  const handleTrainRebuild = async () => {
-    setTrainLoading(true)
-    setError(null)
-    try {
-      const res = await fetch(apiUrl('/api/train/rebuild'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          include_labeled_captures: includeLabeledInTrain,
-        }),
-      })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || '训练失败')
-      await loadModelRuns()
-      await loadSessions()
-      await loadTrainingPoolSummary()
-      if (data.run_id) {
-        await handleViewRunMetrics(data.run_id)
-      }
-      const m = data.metrics || {}
-      alert(
-        `训练完成（随机森林，${m.feature_count ?? '—'} 维特征）\n` +
-          `训练样本: ${m.sample_total != null ? `${m.sample_total} 条（正常 ${m.sample_normal} / 恶意 ${m.sample_malicious}）` : '—'}\n` +
-          `拟合/测试: ${m.train_set_size != null ? `${m.train_set_size} / ${m.test_set_size} 条` : '—'}\n` +
-          `\n测试准确率: ${m.test_score != null ? (m.test_score * 100).toFixed(2) : '—'}%\n` +
-          `恶意类 Recall: ${m.malicious_recall != null ? (m.malicious_recall * 100).toFixed(2) : '—'}%  F1: ${m.malicious_f1 != null ? (m.malicious_f1 * 100).toFixed(2) : '—'}%\n` +
-          `训练池 pcap: ${data.merged_session_count ?? 0} 个\n` +
-          `合并正常 pcap: ${data.merged_good_pcaps}，恶意: ${data.merged_bad_pcaps}\n` +
-          '详见下方训练记录中的「评估」面板。'
-      )
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setTrainLoading(false)
-    }
-  }
-
-  const viewingRun = viewingRunId
-    ? (viewingRunDetail || modelRuns.find((r) => r.id === viewingRunId))
-    : null
-
-  const handleRestoreModelRun = async (runId) => {
-    if (
-      !window.confirm(
-        '确定将线上检测使用的 model.pkl 恢复为该次训练保存的版本？当前磁盘上的 model.pkl 将被覆盖。'
-      )
-    ) {
-      return
-    }
-    setRestoreRunId(runId)
-    setError(null)
-    try {
-      const res = await fetch(apiUrl('/api/train/restore'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ run_id: runId }),
-      })
-      const data = await readJsonResponse(res)
-      if (!res.ok) throw new Error(data.error || '恢复失败')
-      await loadModelRuns()
-      alert(data.message || '已恢复')
-    } catch (e) {
-      setError(e.message)
-    } finally {
-      setRestoreRunId(null)
     }
   }
 
@@ -995,7 +561,7 @@ export default function ProtocolAnalysis() {
       <main className="pa-main">
         <header className="pa-page-head">
           <h1>抓包协议分析</h1>
-          <p>实时抓包 / 离线 pcap · 协议解析 · 特征与模型预览 · 会话标注 · 合并重训</p>
+          <p>实时抓包 / 离线 pcap · 协议解析 · 特征预览 · 会话标注与训练池入选</p>
         </header>
 
         {error && (
@@ -1457,205 +1023,6 @@ export default function ProtocolAnalysis() {
           </section>
         )}
 
-        <section className="pa-panel train-panel">
-          <h2>
-            <Icon name="barChart" size={20} /> 模型重训（训练样本池）
-          </h2>
-          <p className="muted small">
-            在默认 goodx/badx 基础上，合并<strong>训练样本池</strong>中已勾选的 pcap 后重训。先标注会话，再点「加入训练」；不需要的 pcap 可「移出训练」。
-          </p>
-          <label className="pa-check">
-            <input
-              type="checkbox"
-              checked={includeLabeledInTrain}
-              onChange={(e) => setIncludeLabeledInTrain(e.target.checked)}
-            />
-            合并训练样本池中的 pcap（取消则仅用 goodx/badx 重训）
-          </label>
-          {trainingPoolSummary && (
-            <p className="muted small pa-labeled-summary">
-              训练池：正常 {trainingPoolSummary.pool?.normal ?? 0} / 恶意{' '}
-              {trainingPoolSummary.pool?.malicious ?? 0} 份（共{' '}
-              {trainingPoolSummary.pool?.total ?? 0} 份）；
-              已标注未入选：{trainingPoolSummary.labeled_not_in_pool?.total ?? 0} 份
-            </p>
-          )}
-          {sessions.filter((s) => s.annotation).length > 0 && (
-            <div className="pa-training-pool-table-wrap">
-              <h3 className="pa-training-pool-title">已标注会话 · 训练池管理</h3>
-              <table className="pa-table pa-training-pool-table">
-                <thead>
-                  <tr>
-                    <th>文件</th>
-                    <th>标注</th>
-                    <th>协议</th>
-                    <th>包数</th>
-                    <th>状态</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessions
-                    .filter((s) => s.annotation)
-                    .map((s) => {
-                      const offline = isOfflineCaptureSession(s)
-                      const fname = offline && s.source_file ? s.source_file : s.pcap_filename || '—'
-                      const tags = s.protocol_tags?.length
-                        ? s.protocol_tags
-                        : inferTagsFromBpf(s.bpf_filter)
-                      return (
-                        <tr key={`pool-${s.id}`} className={s.training_selected ? 'pa-pool-in' : ''}>
-                          <td className="fname-cell" title={fname}>
-                            {fname}
-                          </td>
-                          <td>
-                            {s.annotation === 'normal' ? (
-                              <span className="pa-tag good">正常</span>
-                            ) : (
-                              <span className="pa-tag bad">恶意</span>
-                            )}
-                          </td>
-                          <td className="muted small">{tags.length ? tags.join(', ') : '—'}</td>
-                          <td>{s.packet_count}</td>
-                          <td>
-                            <button
-                              type="button"
-                              className={`pa-pool-toggle${s.training_selected ? ' on' : ''}`}
-                              onClick={() => handleToggleTrainingPool(s.id, !s.training_selected)}
-                              title="点击切换是否加入训练池"
-                            >
-                              {s.training_selected ? '已入选' : '未入选'}
-                            </button>
-                          </td>
-                          <td>
-                            <button
-                              type="button"
-                              className="pa-mini"
-                              onClick={() => handleToggleTrainingPool(s.id, !s.training_selected)}
-                            >
-                              {s.training_selected ? '移出训练' : '加入训练'}
-                            </button>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <button
-            type="button"
-            className="pa-btn primary"
-            disabled={trainLoading || busy}
-            onClick={handleTrainRebuild}
-          >
-            {trainLoading ? '训练中（可能数十秒）…' : '开始重训'}
-          </button>
-        </section>
-
-        <section className="pa-panel runs-panel">
-          <h2>
-            <Icon name="history" size={20} /> 训练记录（MongoDB model_runs）
-          </h2>
-          {activeModel?.model_algorithm_label && (
-            <p className="muted small pa-active-model-hint">
-              当前检测使用模型：
-              <strong>{activeModel.model_algorithm_label}</strong>
-              {activeModel.run_id ? '（已关联下方训练记录）' : '（未匹配到历史训练快照）'}
-            </p>
-          )}
-          {modelRuns.length === 0 ? (
-            <p className="muted">完成一次重训后会显示在此</p>
-          ) : (
-            <div className="table-scroll">
-              <table className="pa-table">
-                <thead>
-                  <tr>
-                    <th>时间</th>
-                    <th>模型</th>
-                    <th>合并</th>
-                    <th>测试准确率</th>
-                    <th>恶意 Recall</th>
-                    <th>恶意 F1</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {modelRuns.map((r) => (
-                    <Fragment key={r.id}>
-                      <tr
-                        className={[
-                          r.is_active ? 'pa-run-active' : '',
-                          viewingRunId === r.id ? 'pa-run-viewing' : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ') || undefined}
-                      >
-                        <td className="muted">
-                          {formatUtcTime(r.created_at)}
-                        </td>
-                        <td>
-                          <div className="pa-model-cell">
-                            <span>{r.model_algorithm_label || r.model_algorithm || '随机森林'}</span>
-                            {r.is_active && <span className="pa-model-badge">线上</span>}
-                          </div>
-                        </td>
-                        <td>
-                          {(() => {
-                            const merge = runMergeModeInfo(r)
-                            return (
-                              <span
-                                className={`pa-merge-badge ${merge.variant}`}
-                                title={merge.title}
-                              >
-                                {merge.text}
-                              </span>
-                            )
-                          })()}
-                        </td>
-                        <td>{r.test_score != null ? `${(r.test_score * 100).toFixed(2)}%` : '—'}</td>
-                        <td>{r.malicious_recall != null ? `${(r.malicious_recall * 100).toFixed(2)}%` : '—'}</td>
-                        <td>{r.malicious_f1 != null ? `${(r.malicious_f1 * 100).toFixed(2)}%` : '—'}</td>
-                        <td className="pa-run-actions">
-                          <button
-                            type="button"
-                            className={`pa-btn pa-btn-sm${viewingRunId === r.id ? ' primary' : ''}`}
-                            onClick={() => handleViewRunMetrics(r.id)}
-                          >
-                            {viewingRunId === r.id ? '收起评估' : '评估'}
-                          </button>
-                          <button
-                            type="button"
-                            className="pa-btn pa-btn-sm"
-                            disabled={!r.can_restore || restoreRunId != null || trainLoading || busy}
-                            onClick={() => handleRestoreModelRun(r.id)}
-                          >
-                            {restoreRunId === r.id ? '恢复中…' : '恢复'}
-                          </button>
-                        </td>
-                      </tr>
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          <div ref={metricsPanelRef}>
-            {viewingRunLoading ? (
-              <p className="muted small pa-metrics-hint">正在加载训练评估与算法基线对比…</p>
-            ) : viewingRun ? (
-              <TrainMetricsPanel
-                run={viewingRun}
-                title={viewingRun.is_active ? '本次训练评估（线上）' : '训练记录评估'}
-              />
-            ) : (
-              <p className="muted small pa-metrics-hint">
-                点击训练记录中的「评估」查看合并的标注会话、算法基线对比、混淆矩阵与特征重要性
-              </p>
-            )}
-          </div>
-        </section>
       </main>
       <style>{pageStyles}</style>
     </div>

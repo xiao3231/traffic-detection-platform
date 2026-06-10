@@ -288,13 +288,14 @@
   flex-shrink: 0;
 }
 
-/* Bento 功能卡：管理员 5 张 / 普通用户 3 张 */
+/* Bento 功能卡：管理员 6 张 / 5 张 / 普通用户 3 张 */
 .home-cards {
   display: grid;
   gap: 16px;
   margin-bottom: 40px;
 }
 
+.home-cards--bento-6,
 .home-cards--bento-5,
 .home-cards--bento-3 {
   grid-template-columns: repeat(3, 1fr);
@@ -323,6 +324,37 @@
 }
 
 .home-cards--bento-5 .home-card:nth-child(5) {
+  grid-column: 3;
+  grid-row: 3;
+}
+
+/* 6 张：左上大卡 + 右上两小 + 下排三卡 */
+.home-cards--bento-6 .home-card:nth-child(1) {
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+}
+
+.home-cards--bento-6 .home-card:nth-child(2) {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+.home-cards--bento-6 .home-card:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.home-cards--bento-6 .home-card:nth-child(4) {
+  grid-column: 1;
+  grid-row: 3;
+}
+
+.home-cards--bento-6 .home-card:nth-child(5) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.home-cards--bento-6 .home-card:nth-child(6) {
   grid-column: 3;
   grid-row: 3;
 }
@@ -371,6 +403,7 @@
 .home-card:nth-child(3) { animation-delay: 0.16s; }
 .home-card:nth-child(4) { animation-delay: 0.2s; }
 .home-card:nth-child(5) { animation-delay: 0.24s; }
+.home-card:nth-child(6) { animation-delay: 0.28s; }
 
 /* 主卡：左侧 2×2 大卡（管理员为抓包协议分析，普通用户为流量检测） */
 .home-card--hero {
@@ -617,17 +650,25 @@
 }
 
 @media (max-width: 900px) {
+  .home-cards--bento-6,
   .home-cards--bento-5,
   .home-cards--bento-3 {
     grid-template-columns: 1fr 1fr;
     grid-auto-rows: minmax(120px, auto);
   }
 
+  .home-cards--bento-6 .home-card:nth-child(1),
   .home-cards--bento-5 .home-card:nth-child(1),
   .home-cards--bento-3 .home-card:nth-child(1) {
     grid-column: 1 / -1;
     grid-row: auto;
   }
+
+  .home-cards--bento-6 .home-card:nth-child(2) { grid-column: 1; grid-row: auto; }
+  .home-cards--bento-6 .home-card:nth-child(3) { grid-column: 2; grid-row: auto; }
+  .home-cards--bento-6 .home-card:nth-child(4) { grid-column: 1; grid-row: auto; }
+  .home-cards--bento-6 .home-card:nth-child(5) { grid-column: 2; grid-row: auto; }
+  .home-cards--bento-6 .home-card:nth-child(6) { grid-column: 1 / -1; grid-row: auto; }
 
   .home-cards--bento-5 .home-card:nth-child(2) { grid-column: 1; grid-row: auto; }
   .home-cards--bento-5 .home-card:nth-child(3) { grid-column: 2; grid-row: auto; }
@@ -654,11 +695,13 @@
     padding: 20px 16px 88px;
   }
 
+  .home-cards--bento-6,
   .home-cards--bento-5,
   .home-cards--bento-3 {
     grid-template-columns: 1fr;
   }
 
+  .home-cards--bento-6 .home-card:nth-child(n),
   .home-cards--bento-5 .home-card:nth-child(n),
   .home-cards--bento-3 .home-card:nth-child(n) {
     grid-column: 1;
